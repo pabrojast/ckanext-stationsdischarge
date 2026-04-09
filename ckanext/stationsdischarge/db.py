@@ -102,12 +102,13 @@ class HydroStation(DomainObject, BaseModel):
         if submission_status:
             query = query.filter(cls.submission_status == submission_status)
         if q:
-            q_like = f"%{q}%"
+            q_escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            q_like = f"%{q_escaped}%"
             query = query.filter(
-                cls.title.ilike(q_like)
-                | cls.station_id.ilike(q_like)
-                | cls.river_name.ilike(q_like)
-                | cls.basin_name.ilike(q_like)
+                cls.title.ilike(q_like, escape="\\")
+                | cls.station_id.ilike(q_like, escape="\\")
+                | cls.river_name.ilike(q_like, escape="\\")
+                | cls.basin_name.ilike(q_like, escape="\\")
             )
 
         if order_by == "title":

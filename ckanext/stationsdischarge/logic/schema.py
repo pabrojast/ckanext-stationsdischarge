@@ -69,7 +69,7 @@ def station_create_schema():
         "unit_flow": [not_empty, unicode_safe],
         # Rating curve
         "curve_type": [not_empty, unicode_safe],
-        "curve_params_json": [not_empty, unicode_safe],
+        "curve_params_json": [not_empty, unicode_safe, valid_curve_params_json],
         "curve_valid_from": [ignore_missing, unicode_safe],
         "curve_valid_to": [ignore_missing, unicode_safe],
         "curve_notes": [ignore_missing, unicode_safe],
@@ -81,11 +81,11 @@ def station_create_schema():
 def station_update_schema():
     schema = station_create_schema()
     schema["id"] = [not_empty, unicode_safe]
-    # On update, make some fields optional (they keep existing values)
+    # On update, make fields optional but keep their validators
     for field in ("title", "name", "station_id", "owner_org",
                   "station_status", "latitude", "longitude",
                   "thingsboard_entity_id", "thingsboard_telemetry_key",
                   "observed_variable", "unit_level", "unit_flow",
                   "curve_type", "curve_params_json"):
-        schema[field] = [ignore_missing, unicode_safe]
+        schema[field] = [ignore_missing] + schema[field]
     return schema

@@ -57,7 +57,7 @@ def _validate_data(data_dict, schema, context):
                 sig = inspect.signature(validator)
                 if len(sig.parameters) >= 4:
                     fake_key = field
-                    fake_data = {field: value}
+                    fake_data = data_dict.copy()
                     fake_errors = {field: []}
                     validator(fake_key, fake_data, fake_errors, context)
                     value = fake_data.get(field, value)
@@ -128,12 +128,19 @@ def station_create(context, data_dict):
         except (ValueError, TypeError):
             pass
 
-    station.save()
-    model.Session.commit()
+    try:
+        station.save()
+        model.Session.commit()
+    except Exception as e:
+        model.Session.rollback()
+        if "unique" in str(e).lower() or "duplicate" in str(e).lower():
+            raise toolkit.ValidationError(
+                {"name": ["A station with this name or ID already exists."]}
+            )
+        raise
 
     log.info("stationsdischarge: Created station '%s' (%s)",
              station.title, station.id)
-
     return station.as_dict()
 
 
@@ -230,8 +237,16 @@ def station_update(context, data_dict):
             pass
 
     station.modified = datetime.datetime.utcnow()
-    station.save()
-    model.Session.commit()
+    try:
+        station.save()
+        model.Session.commit()
+    except Exception as e:
+        model.Session.rollback()
+        if "unique" in str(e).lower() or "duplicate" in str(e).lower():
+            raise toolkit.ValidationError(
+                {"name": ["A station with this name or ID already exists."]}
+            )
+        raise
 
     log.info("stationsdischarge: Updated station '%s' (%s)",
              station.title, station.id)
@@ -285,14 +300,22 @@ def station_list(context, data_dict):
         user_obj = model.User.get(user)
         is_sysadmin = user_obj and user_obj.sysadmin
 
+    try:
+        limit = int(data_dict.get("limit", 100))
+        offset = int(data_dict.get("offset", 0))
+    except (ValueError, TypeError):
+        raise toolkit.ValidationError({
+            "message": ["limit and offset must be valid integers"]
+        })
+
     results, total = station_db.HydroStation.list_stations(
         org_id=data_dict.get("org_id"),
         station_status=data_dict.get("station_status"),
         submission_status=data_dict.get("submission_status"),
         q=data_dict.get("q"),
         order_by=data_dict.get("order_by", "modified"),
-        limit=int(data_dict.get("limit", 100)),
-        offset=int(data_dict.get("offset", 0)),
+        limit=limit,
+        offset=offset,
     )
 
     # Filter by visibility unless sysadmin
@@ -308,5 +331,5 @@ def station_list(context, data_dict):
 
     return {
         "results": station_dicts,
-        "count": total,
+        "count": len(station_dicts),
     }

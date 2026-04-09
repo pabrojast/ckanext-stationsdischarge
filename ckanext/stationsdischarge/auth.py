@@ -87,9 +87,15 @@ def station_create(context, data_dict):
 
 
 def station_update(context, data_dict):
-    """Author, org admin/editor, or sysadmin can update."""
+    """Author, org admin/editor, or sysadmin can update.
+    Only sysadmins can approve or reject."""
     if _is_sysadmin(context):
         return {"success": True}
+
+    # Approval/rejection requires sysadmin
+    submission_action = data_dict.get("submission_action")
+    if submission_action in ("approve", "reject"):
+        return {"success": False, "msg": "Only sysadmins can approve/reject stations."}
 
     user = context.get("user")
     if not user:
