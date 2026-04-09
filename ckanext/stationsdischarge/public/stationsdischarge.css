@@ -1,0 +1,245 @@
+/* ── Hydro Station Styles ────────────────────────────── */
+
+/* Station index */
+.station-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.station-filters {
+  margin-bottom: 20px;
+  padding: 15px;
+  background: #f9f9f9;
+  border-radius: 4px;
+  border: 1px solid #eee;
+}
+
+.station-filters .form-group {
+  display: inline-block;
+  margin-right: 15px;
+  margin-bottom: 10px;
+}
+
+.station-filters select,
+.station-filters input[type="text"] {
+  min-width: 180px;
+}
+
+/* Station cards in list */
+.station-card {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 15px 20px;
+  margin-bottom: 12px;
+  background: #fff;
+  transition: box-shadow 0.2s;
+}
+
+.station-card:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.station-card h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+}
+
+.station-card h3 a {
+  color: #333;
+  text-decoration: none;
+}
+
+.station-card h3 a:hover {
+  color: #0b6efd;
+}
+
+.station-card-meta {
+  color: #666;
+  font-size: 13px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.station-card-meta i {
+  margin-right: 4px;
+  color: #999;
+}
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.badge-success {
+  background: #d4edda;
+  color: #155724;
+}
+
+.badge-warning {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.badge-danger {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.badge-secondary {
+  background: #e2e3e5;
+  color: #383d41;
+}
+
+/* Station detail page */
+.station-detail-header {
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #eee;
+}
+
+.station-detail-header h1 {
+  margin-bottom: 10px;
+}
+
+.station-detail-header .station-badges {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+/* Form groups / sections */
+.station-form-section {
+  margin-bottom: 25px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.station-form-section-header {
+  background: #f5f7fa;
+  padding: 12px 18px;
+  border-bottom: 1px solid #e0e0e0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.station-form-section-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #333;
+}
+
+.station-form-section-header h3 i {
+  margin-right: 8px;
+  color: #666;
+  width: 20px;
+  text-align: center;
+}
+
+.station-form-section-body {
+  padding: 18px;
+}
+
+/* Detail sections */
+.station-detail-section {
+  margin-bottom: 25px;
+}
+
+.station-detail-section h2 {
+  font-size: 18px;
+  margin-bottom: 15px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #eee;
+  color: #333;
+}
+
+.station-detail-section h2 i {
+  margin-right: 8px;
+  color: #0b6efd;
+}
+
+.station-detail-table {
+  width: 100%;
+}
+
+.station-detail-table th {
+  width: 35%;
+  padding: 8px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #555;
+  vertical-align: top;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.station-detail-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+/* JSON params display */
+.curve-params-display {
+  background: #f8f9fa;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 12px;
+  font-family: monospace;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Workflow buttons */
+.station-workflow-buttons {
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid #eee;
+  display: flex;
+  gap: 10px;
+}
+
+/* Form help text */
+.station-form .help-text {
+  font-size: 12px;
+  color: #888;
+  margin-top: 3px;
+}
+
+/* Empty state */
+.station-empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: #888;
+}
+
+.station-empty-state i {
+  font-size: 48px;
+  margin-bottom: 15px;
+  display: block;
+  color: #ccc;
+}
+
+/* Delete confirmation */
+.station-delete-confirm {
+  max-width: 600px;
+  margin: 40px auto;
+  padding: 30px;
+  text-align: center;
+  border: 1px solid #f8d7da;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.station-delete-confirm h2 {
+  color: #721c24;
+  margin-bottom: 15px;
+}

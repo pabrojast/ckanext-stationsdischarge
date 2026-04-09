@@ -20,6 +20,7 @@ setup(
             "schemas/*.yaml",
             "templates/**/*.html",
             "public/**/*",
+            "logic/*.py",
         ],
     },
     python_requires=">=3.8",

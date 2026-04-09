@@ -62,9 +62,8 @@ _VALID_CURVE_TYPES = {"power", "linear_segments", "table_interpolation"}
 def valid_curve_params_json(key, data, errors, context):
     """Cross-field validator: validates curve_params_json against curve_type.
 
-    Registered as a dataset-level validator via scheming's
-    ``dataset_validators`` or called from IValidators.
-    When used as a simple single-field validator it only checks valid JSON.
+    Works with both scheming-style tuple keys and flat dict keys.
+    When curve_type is not found, only validates JSON syntax.
     """
     value = data.get(key)
     if not value:
@@ -81,17 +80,16 @@ def valid_curve_params_json(key, data, errors, context):
         errors[key].append("Must be a JSON object ({...}).")
         return
 
-    # Try to find curve_type in sibling fields
-    curve_type_key = None
-    for k in data:
-        if isinstance(k, tuple) and k[-1] == "curve_type":
-            curve_type_key = k
-            break
-    if not curve_type_key:
+    # Find curve_type: support both flat keys and tuple keys
+    curve_type = data.get("curve_type")
+    if curve_type is None:
+        for k in data:
+            if isinstance(k, tuple) and k[-1] == "curve_type":
+                curve_type = data.get(k, "")
+                break
+    if not curve_type:
         # standalone validation – just accept valid JSON
         return
-
-    curve_type = data.get(curve_type_key, "")
 
     if curve_type == "power":
         for field in ("a", "b", "h0"):

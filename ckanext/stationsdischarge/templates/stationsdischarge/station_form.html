@@ -1,0 +1,357 @@
+{% import 'macros/form.html' as form %}
+
+{% set data = data or {} %}
+{% set errors = errors or {} %}
+
+<form class="dataset-form station-form" method="post" action="{{ form_action }}">
+  {{ h.csrf_input() if 'csrf_input' in h }}
+
+  {# Error summary #}
+  {% if error_summary %}
+    <div class="alert alert-danger">
+      <h4>{{ _('Errors in form') }}</h4>
+      <ul>
+        {% for field, msg in error_summary.items() %}
+          <li><strong>{{ field }}:</strong> {{ msg }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {# ══════════════════════════════════════════════════════
+     SECTION 1: Station Identification
+     ══════════════════════════════════════════════════════ #}
+  <div class="station-form-section">
+    <div class="station-form-section-header">
+      <h3><i class="fa fa-id-card"></i> {{ _('Station Identification') }}</h3>
+    </div>
+    <div class="station-form-section-body">
+
+      {# Title #}
+      {{ form.input('title', id='field-title', label=_('Station Name') + ' *',
+         placeholder=_('e.g. Río Maipo – Puente El Manzano'),
+         value=data.title, error=errors.title,
+         classes=['control-full', 'control-large'],
+         attrs={'class': 'form-control'}) }}
+
+      {# URL slug #}
+      {{ form.input('name', id='field-name', label=_('URL Slug') + ' *',
+         placeholder=_('e.g. est-rio-maipo-puente-manzano'),
+         value=data.name, error=errors.name,
+         attrs={'class': 'form-control'}) }}
+      <p class="help-text">{{ _('URL-friendly identifier. Auto-generated from title if left empty.') }}</p>
+
+      {# Station ID #}
+      {{ form.input('station_id', id='field-station-id', label=_('Station ID') + ' *',
+         placeholder=_('e.g. EST-MAIPO-001'),
+         value=data.station_id, error=errors.station_id,
+         attrs={'class': 'form-control'}) }}
+      <p class="help-text">{{ _('Unique identifier used by the external rating-service.') }}</p>
+
+      {# Organization #}
+      <div class="form-group control-group{% if errors.owner_org %} error{% endif %}">
+        <label for="field-owner-org" class="control-label">{{ _('Organization') }} *</label>
+        <div class="controls">
+          <select id="field-owner-org" name="owner_org" class="form-control">
+            <option value="">{{ _('Select organization...') }}</option>
+            {% for org_item in organizations %}
+              <option value="{{ org_item.id }}"
+                {% if data.owner_org == org_item.id %}selected{% endif %}>
+                {{ org_item.display_name or org_item.title }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        {% if errors.owner_org %}<span class="error-block">{{ errors.owner_org | join(', ') }}</span>{% endif %}
+      </div>
+
+      {# Station Status #}
+      <div class="form-group control-group{% if errors.station_status %} error{% endif %}">
+        <label for="field-station-status" class="control-label">{{ _('Station Status') }} *</label>
+        <div class="controls">
+          <select id="field-station-status" name="station_status" class="form-control">
+            {% set status_choices = [
+              ('active', _('Active')),
+              ('inactive', _('Inactive')),
+              ('maintenance', _('Maintenance'))
+            ] %}
+            {% for value, label in status_choices %}
+              <option value="{{ value }}"
+                {% if (data.station_status or 'active') == value %}selected{% endif %}>
+                {{ label }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        {% if errors.station_status %}<span class="error-block">{{ errors.station_status | join(', ') }}</span>{% endif %}
+      </div>
+
+      {# Description #}
+      {{ form.markdown('notes', id='field-notes', label=_('Description'),
+         placeholder=_('Describe the station, its purpose, equipment, etc.'),
+         value=data.notes, error=errors.notes) }}
+
+      {# Tags #}
+      {{ form.input('tag_string', id='field-tags', label=_('Tags'),
+         placeholder=_('e.g. hydrology, water level, discharge'),
+         value=data.tag_string, error=errors.tag_string,
+         attrs={'class': 'form-control'}) }}
+
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════════
+     SECTION 2: Location
+     ══════════════════════════════════════════════════════ #}
+  <div class="station-form-section">
+    <div class="station-form-section-header">
+      <h3><i class="fa fa-map-marker"></i> {{ _('Location') }}</h3>
+    </div>
+    <div class="station-form-section-body">
+
+      {# Latitude #}
+      {{ form.input('latitude', id='field-latitude', label=_('Latitude') + ' *',
+         placeholder='-33.5982',
+         value=data.latitude, error=errors.latitude,
+         attrs={'class': 'form-control', 'type': 'number', 'step': 'any', 'min': '-90', 'max': '90'}) }}
+      <p class="help-text">{{ _('Decimal degrees (WGS 84). Range: −90 to 90.') }}</p>
+
+      {# Longitude #}
+      {{ form.input('longitude', id='field-longitude', label=_('Longitude') + ' *',
+         placeholder='-70.3451',
+         value=data.longitude, error=errors.longitude,
+         attrs={'class': 'form-control', 'type': 'number', 'step': 'any', 'min': '-180', 'max': '180'}) }}
+      <p class="help-text">{{ _('Decimal degrees (WGS 84). Range: −180 to 180.') }}</p>
+
+      {# River name #}
+      {{ form.input('river_name', id='field-river-name', label=_('River / Water Body'),
+         placeholder=_('e.g. Río Maipo'),
+         value=data.river_name, error=errors.river_name,
+         attrs={'class': 'form-control'}) }}
+
+      {# Basin name #}
+      {{ form.input('basin_name', id='field-basin-name', label=_('Basin'),
+         placeholder=_('e.g. Maipo Basin'),
+         value=data.basin_name, error=errors.basin_name,
+         attrs={'class': 'form-control'}) }}
+
+      {# Country #}
+      {{ form.input('country', id='field-country', label=_('Country'),
+         placeholder=_('e.g. Chile'),
+         value=data.country, error=errors.country,
+         attrs={'class': 'form-control'}) }}
+
+      {# Elevation #}
+      {{ form.input('elevation_masl', id='field-elevation', label=_('Elevation (m a.s.l.)'),
+         placeholder='842',
+         value=data.elevation_masl, error=errors.elevation_masl,
+         attrs={'class': 'form-control', 'type': 'number', 'step': 'any'}) }}
+
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════════
+     SECTION 3: IoT Sensor Connection
+     ══════════════════════════════════════════════════════ #}
+  <div class="station-form-section">
+    <div class="station-form-section-header">
+      <h3><i class="fa fa-plug"></i> {{ _('IoT Sensor Connection') }}</h3>
+    </div>
+    <div class="station-form-section-body">
+
+      {# ThingsBoard Entity ID #}
+      {{ form.input('thingsboard_entity_id', id='field-tb-entity-id',
+         label=_('ThingsBoard Entity ID') + ' *',
+         placeholder='784f394c-42b6-11ec-81d3-0242ac130003',
+         value=data.thingsboard_entity_id, error=errors.thingsboard_entity_id,
+         attrs={'class': 'form-control'}) }}
+      <p class="help-text">{{ _('UUID of the entity in ThingsBoard.') }}</p>
+
+      {# ThingsBoard Device ID #}
+      {{ form.input('thingsboard_device_id', id='field-tb-device-id',
+         label=_('ThingsBoard Device ID'),
+         placeholder='784f394c-42b6-11ec-81d3-0242ac130003',
+         value=data.thingsboard_device_id, error=errors.thingsboard_device_id,
+         attrs={'class': 'form-control'}) }}
+      <p class="help-text">{{ _('Only if the device ID differs from the entity ID above.') }}</p>
+
+      {# Telemetry Key #}
+      {{ form.input('thingsboard_telemetry_key', id='field-tb-telemetry-key',
+         label=_('Telemetry Key') + ' *',
+         placeholder='water_level',
+         value=data.thingsboard_telemetry_key, error=errors.thingsboard_telemetry_key,
+         attrs={'class': 'form-control'}) }}
+      <p class="help-text">{{ _('The telemetry key name in ThingsBoard (e.g. water_level).') }}</p>
+
+      {# Observed Variable #}
+      <div class="form-group control-group{% if errors.observed_variable %} error{% endif %}">
+        <label for="field-observed-variable" class="control-label">{{ _('Observed Variable') }} *</label>
+        <div class="controls">
+          <select id="field-observed-variable" name="observed_variable" class="form-control">
+            {% set var_choices = [
+              ('water_level', _('Water Level')),
+              ('precipitation', _('Precipitation')),
+              ('discharge', _('Discharge')),
+              ('water_temperature', _('Water Temperature')),
+              ('sediment_load', _('Sediment Load')),
+              ('other', _('Other'))
+            ] %}
+            {% for value, label in var_choices %}
+              <option value="{{ value }}"
+                {% if (data.observed_variable or 'water_level') == value %}selected{% endif %}>
+                {{ label }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        {% if errors.observed_variable %}<span class="error-block">{{ errors.observed_variable | join(', ') }}</span>{% endif %}
+      </div>
+
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════════
+     SECTION 4: Measurement Units
+     ══════════════════════════════════════════════════════ #}
+  <div class="station-form-section">
+    <div class="station-form-section-header">
+      <h3><i class="fa fa-balance-scale"></i> {{ _('Measurement Units') }}</h3>
+    </div>
+    <div class="station-form-section-body">
+
+      {# Level Unit #}
+      <div class="form-group control-group{% if errors.unit_level %} error{% endif %}">
+        <label for="field-unit-level" class="control-label">{{ _('Level Unit') }} *</label>
+        <div class="controls">
+          <select id="field-unit-level" name="unit_level" class="form-control">
+            {% set level_choices = [
+              ('m', _('Metres (m)')),
+              ('cm', _('Centimetres (cm)')),
+              ('mm', _('Millimetres (mm)')),
+              ('ft', _('Feet (ft)'))
+            ] %}
+            {% for value, label in level_choices %}
+              <option value="{{ value }}"
+                {% if (data.unit_level or 'm') == value %}selected{% endif %}>
+                {{ label }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        {% if errors.unit_level %}<span class="error-block">{{ errors.unit_level | join(', ') }}</span>{% endif %}
+      </div>
+
+      {# Flow Unit #}
+      <div class="form-group control-group{% if errors.unit_flow %} error{% endif %}">
+        <label for="field-unit-flow" class="control-label">{{ _('Flow Unit') }} *</label>
+        <div class="controls">
+          <select id="field-unit-flow" name="unit_flow" class="form-control">
+            {% set flow_choices = [
+              ('m3/s', _('Cubic metres per second (m³/s)')),
+              ('l/s', _('Litres per second (l/s)')),
+              ('ft3/s', _('Cubic feet per second (ft³/s)'))
+            ] %}
+            {% for value, label in flow_choices %}
+              <option value="{{ value }}"
+                {% if (data.unit_flow or 'm3/s') == value %}selected{% endif %}>
+                {{ label }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        {% if errors.unit_flow %}<span class="error-block">{{ errors.unit_flow | join(', ') }}</span>{% endif %}
+      </div>
+
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════════
+     SECTION 5: Rating Curve
+     ══════════════════════════════════════════════════════ #}
+  <div class="station-form-section">
+    <div class="station-form-section-header">
+      <h3><i class="fa fa-line-chart"></i> {{ _('Rating Curve') }}</h3>
+    </div>
+    <div class="station-form-section-body">
+
+      {# Curve Type #}
+      <div class="form-group control-group{% if errors.curve_type %} error{% endif %}">
+        <label for="field-curve-type" class="control-label">{{ _('Curve Type') }} *</label>
+        <div class="controls">
+          <select id="field-curve-type" name="curve_type" class="form-control">
+            {% set curve_choices = [
+              ('power', _('Power law Q = a·(H − h₀)ᵇ')),
+              ('linear_segments', _('Linear segments')),
+              ('table_interpolation', _('Table interpolation (H–Q table)'))
+            ] %}
+            {% for value, label in curve_choices %}
+              <option value="{{ value }}"
+                {% if (data.curve_type or 'power') == value %}selected{% endif %}>
+                {{ label }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        {% if errors.curve_type %}<span class="error-block">{{ errors.curve_type | join(', ') }}</span>{% endif %}
+      </div>
+
+      {# Curve Parameters JSON #}
+      <div class="form-group control-group{% if errors.curve_params_json %} error{% endif %}">
+        <label for="field-curve-params" class="control-label">{{ _('Curve Parameters (JSON)') }} *</label>
+        <div class="controls">
+          <textarea id="field-curve-params" name="curve_params_json" class="form-control"
+                    rows="8" style="font-family: monospace; font-size: 13px;"
+                    placeholder='Power:      {"a": 2.5, "b": 1.8, "h0": 0.15}
+Segments:   {"segments": [{"h_min":0,"h_max":1,"slope":2.5,"intercept":0}]}
+Table:      {"table": [{"h":0,"q":0}, {"h":0.5,"q":1.2}]}'>{{ data.curve_params_json or '' }}</textarea>
+        </div>
+        <p class="help-text">
+          {{ _('JSON object matching the selected curve type:') }}<br>
+          <strong>Power:</strong> <code>{"a": 2.5, "b": 1.8, "h0": 0.15}</code><br>
+          <strong>Linear segments:</strong> <code>{"segments": [{"h_min": 0, "h_max": 1, "slope": 2.5, "intercept": 0}]}</code><br>
+          <strong>Table interpolation:</strong> <code>{"table": [{"h": 0, "q": 0}, {"h": 0.5, "q": 1.2}]}</code>
+        </p>
+        {% if errors.curve_params_json %}<span class="error-block">{{ errors.curve_params_json | join(', ') }}</span>{% endif %}
+      </div>
+
+      {# Valid From #}
+      {{ form.input('curve_valid_from', id='field-curve-valid-from',
+         label=_('Valid From'),
+         placeholder='2024-01-01',
+         value=data.curve_valid_from, error=errors.curve_valid_from,
+         attrs={'class': 'form-control', 'type': 'date'}) }}
+
+      {# Valid To #}
+      {{ form.input('curve_valid_to', id='field-curve-valid-to',
+         label=_('Valid To'),
+         placeholder='',
+         value=data.curve_valid_to, error=errors.curve_valid_to,
+         attrs={'class': 'form-control', 'type': 'date'}) }}
+      <p class="help-text">{{ _('Leave empty if this is the current rating curve.') }}</p>
+
+      {# Curve Notes #}
+      {{ form.input('curve_notes', id='field-curve-notes',
+         label=_('Curve Notes'),
+         placeholder=_('e.g. Calibrated with 12 gauging measurements, R² = 0.97'),
+         value=data.curve_notes, error=errors.curve_notes,
+         attrs={'class': 'form-control'}) }}
+
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════════
+     SUBMIT BUTTONS
+     ══════════════════════════════════════════════════════ #}
+  <div class="form-actions" style="margin-top: 20px;">
+    <div class="btn-group">
+      <button type="submit" name="submission_action" value="draft" class="btn btn-default">
+        <i class="fa fa-save"></i> {{ _('Save as Draft') }}
+      </button>
+      <button type="submit" name="submission_action" value="submit" class="btn btn-primary">
+        <i class="fa fa-paper-plane"></i> {{ _('Submit for Review') }}
+      </button>
+    </div>
+    <a href="{{ h.url_for('hydro_stations.index') }}" class="btn btn-link">{{ _('Cancel') }}</a>
+  </div>
+
+</form>

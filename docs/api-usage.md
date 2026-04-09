@@ -2,6 +2,9 @@
 
 This document describes how the external `rating-service` microservice should query CKAN to obtain hydrometric station configuration.
 
+> **Note**: Stations are stored in their own database table (not as CKAN
+> packages/datasets). Use the `station_*` action API endpoints described below.
+
 ## Base URL
 
 ```
@@ -10,19 +13,29 @@ https://your-ckan-instance.org/api/3/action/
 
 All endpoints return JSON with `{"success": true, "result": {...}}`.
 
-Authentication: use an API key header if CKAN datasets are private:
+Authentication: use an API key header for non-public stations:
 ```
 Authorization: YOUR_CKAN_API_KEY
 ```
 
 ---
 
-## 1. Get a single station by station_id
-
-**Recommended method** — uses Solr full-text search with field filter.
+## 1. Get a single station by station_id or name
 
 ```http
-GET /api/3/action/package_search?fq=type:hydro_station+station_id:"EST-MAIPO-001"&rows=1
+POST /api/3/action/station_show
+Content-Type: application/json
+
+{"id": "EST-MAIPO-001"}
+```
+
+Or by URL slug:
+
+```http
+POST /api/3/action/station_show
+Content-Type: application/json
+
+{"id": "est-rio-maipo-puente-manzano"}
 ```
 
 ### Response
@@ -31,68 +44,61 @@ GET /api/3/action/package_search?fq=type:hydro_station+station_id:"EST-MAIPO-001
 {
   "success": true,
   "result": {
-    "count": 1,
-    "results": [
-      {
-        "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        "type": "hydro_station",
-        "name": "est-rio-maipo-puente-manzano",
-        "title": "Estación Río Maipo – Puente El Manzano",
-        "station_id": "EST-MAIPO-001",
-        "station_status": "active",
-        "latitude": "-33.5982",
-        "longitude": "-70.3451",
-        "spatial": "{\"type\": \"Point\", \"coordinates\": [-70.3451, -33.5982]}",
-        "river_name": "Río Maipo",
-        "basin_name": "Cuenca del Maipo",
-        "country": "Chile",
-        "elevation_masl": "842",
-        "thingsboard_entity_id": "784f394c-42b6-11ec-81d3-0242ac130003",
-        "thingsboard_device_id": "784f394c-42b6-11ec-81d3-0242ac130003",
-        "thingsboard_telemetry_key": "water_level",
-        "observed_variable": "water_level",
-        "unit_level": "m",
-        "unit_flow": "m3/s",
-        "curve_type": "power",
-        "curve_params_json": "{\"a\": 2.5, \"b\": 1.8, \"h0\": 0.15}",
-        "curve_valid_from": "2024-01-01",
-        "curve_valid_to": "",
-        "curve_notes": "Calibrada con 12 aforos. R² = 0.97",
-        "owner_org": "direccion-general-aguas",
-        "notes": "Estación hidrométrica en el Río Maipo.",
-        "resources": []
-      }
-    ]
+    "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "est-rio-maipo-puente-manzano",
+    "title": "Estación Río Maipo – Puente El Manzano",
+    "station_id": "EST-MAIPO-001",
+    "station_status": "active",
+    "submission_status": "approved",
+    "latitude": -33.5982,
+    "longitude": -70.3451,
+    "spatial": "{\"type\": \"Point\", \"coordinates\": [-70.3451, -33.5982]}",
+    "river_name": "Río Maipo",
+    "basin_name": "Cuenca del Maipo",
+    "country": "Chile",
+    "elevation_masl": 842.0,
+    "thingsboard_entity_id": "784f394c-42b6-11ec-81d3-0242ac130003",
+    "thingsboard_device_id": "784f394c-42b6-11ec-81d3-0242ac130003",
+    "thingsboard_telemetry_key": "water_level",
+    "observed_variable": "water_level",
+    "unit_level": "m",
+    "unit_flow": "m3/s",
+    "curve_type": "power",
+    "curve_params_json": "{\"a\": 2.5, \"b\": 1.8, \"h0\": 0.15}",
+    "curve_valid_from": "2024-01-01",
+    "curve_valid_to": null,
+    "curve_notes": "Calibrada con 12 aforos. R² = 0.97",
+    "owner_org": "direccion-general-aguas",
+    "notes": "Estación hidrométrica en el Río Maipo.",
+    "user_id": "...",
+    "created": "2026-04-04T10:00:00",
+    "modified": "2026-04-04T18:30:00"
   }
 }
 ```
 
-### Extracting what you need (Python)
+### Python client
 
 ```python
 import requests
 import json
 
 CKAN_URL = "https://your-ckan.org"
-API_KEY = "your-api-key"  # optional for public datasets
+API_KEY = "your-api-key"  # optional for approved/public stations
 
 def get_station(station_id: str) -> dict | None:
     """Fetch station config from CKAN by station_id."""
-    resp = requests.get(
-        f"{CKAN_URL}/api/3/action/package_search",
-        params={
-            "fq": f'type:hydro_station station_id:"{station_id}"',
-            "rows": 1,
-        },
+    resp = requests.post(
+        f"{CKAN_URL}/api/3/action/station_show",
+        json={"id": station_id},
         headers={"Authorization": API_KEY},
         timeout=10,
     )
     resp.raise_for_status()
-    results = resp.json()["result"]["results"]
-    if not results:
+    data = resp.json()
+    if not data["success"]:
         return None
-    station = results[0]
-    # Parse the curve params
+    station = data["result"]
     station["_curve_params"] = json.loads(station["curve_params_json"])
     return station
 ```
@@ -102,20 +108,44 @@ def get_station(station_id: str) -> dict | None:
 ## 2. List all active stations
 
 ```http
-GET /api/3/action/package_search?fq=type:hydro_station+station_status:active&rows=1000
+POST /api/3/action/station_list
+Content-Type: application/json
+
+{"station_status": "active", "limit": 1000}
+```
+
+### Optional filters
+
+| Parameter          | Description                              |
+|--------------------|------------------------------------------|
+| `station_status`   | `active`, `inactive`, `maintenance`      |
+| `submission_status`| `draft`, `pending`, `approved`, `rejected` |
+| `org_id`           | Filter by organization UUID              |
+| `q`                | Search in title, station_id, river, basin |
+| `order_by`         | `modified` (default), `title`, `created` |
+| `limit`            | Max results (default 100)                |
+| `offset`           | Pagination offset                        |
+
+### Response
+
+```json
+{
+  "success": true,
+  "result": {
+    "results": [ ... ],
+    "count": 42
+  }
+}
 ```
 
 ### Python
 
 ```python
 def list_active_stations() -> list[dict]:
-    """Fetch all active hydro stations."""
-    resp = requests.get(
-        f"{CKAN_URL}/api/3/action/package_search",
-        params={
-            "fq": "type:hydro_station station_status:active",
-            "rows": 1000,
-        },
+    """Fetch all active, approved hydro stations."""
+    resp = requests.post(
+        f"{CKAN_URL}/api/3/action/station_list",
+        json={"station_status": "active", "limit": 1000},
         headers={"Authorization": API_KEY},
         timeout=30,
     )
@@ -125,32 +155,78 @@ def list_active_stations() -> list[dict]:
 
 ---
 
-## 3. Get station by CKAN dataset name/id
-
-If you already know the CKAN package name or UUID:
+## 3. Create a station (programmatically)
 
 ```http
-GET /api/3/action/package_show?id=est-rio-maipo-puente-manzano
+POST /api/3/action/station_create
+Content-Type: application/json
+Authorization: YOUR_API_KEY
+
+{
+  "title": "Estación Río Maipo – Puente El Manzano",
+  "station_id": "EST-MAIPO-001",
+  "owner_org": "org-uuid-here",
+  "latitude": -33.5982,
+  "longitude": -70.3451,
+  "thingsboard_entity_id": "784f394c-42b6-11ec-81d3-0242ac130003",
+  "thingsboard_telemetry_key": "water_level",
+  "observed_variable": "water_level",
+  "station_status": "active",
+  "unit_level": "m",
+  "unit_flow": "m3/s",
+  "curve_type": "power",
+  "curve_params_json": "{\"a\": 2.5, \"b\": 1.8, \"h0\": 0.15}"
+}
 ```
 
 ---
 
-## 4. Spatial search (stations within a bounding box)
-
-Requires `ckanext-spatial` (already enabled).
+## 4. Update a station
 
 ```http
-GET /api/3/action/package_search?fq=type:hydro_station&ext_bbox=-71.5,-34.0,-70.0,-33.0
-```
+POST /api/3/action/station_update
+Content-Type: application/json
+Authorization: YOUR_API_KEY
 
-Returns all stations whose `spatial` geometry intersects the bounding box.
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "curve_params_json": "{\"a\": 2.8, \"b\": 1.75, \"h0\": 0.12}",
+  "curve_notes": "Re-calibrated with 18 gaugings. R² = 0.98"
+}
+```
 
 ---
 
-## 5. Complete rating-service flow
+## 5. Delete a station
+
+```http
+POST /api/3/action/station_delete
+Content-Type: application/json
+Authorization: YOUR_API_KEY
+
+{"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"}
+```
+
+> Only sysadmins can delete stations.
+
+---
+
+## 6. Web UI Endpoints
+
+| URL                            | Description              |
+|--------------------------------|--------------------------|
+| `/hydro-station`               | List all stations        |
+| `/hydro-station/new`           | Create new station form  |
+| `/hydro-station/<name>`        | View station detail      |
+| `/hydro-station/<name>/edit`   | Edit station form        |
+| `/hydro-station/<name>/delete` | Delete confirmation      |
+
+---
+
+## 7. Complete rating-service flow
 
 ```
-1. rating-service calls CKAN → get_station("EST-MAIPO-001")
+1. rating-service calls CKAN → station_show(id="EST-MAIPO-001")
 2. Extracts: thingsboard_entity_id, thingsboard_telemetry_key
 3. Calls ThingsBoard API:
    GET /api/plugins/telemetry/DEVICE/{entity_id}/values/timeseries?keys=water_level
@@ -186,11 +262,3 @@ Returns all stations whose `spatial` geometry intersects the bounding box.
   ]
 }
 ```
-
----
-
-## 6. TerriaJS consumption
-
-TerriaJS can load the GeoJSON endpoint from `rating-service` directly or discover it via the CKAN catalogue since `terria_view` is already enabled.
-
-Recommended: register the rating-service GeoJSON URL as a **resource** in the CKAN `hydro_station` dataset with `format: geojson` and `resource_type: geojson`.

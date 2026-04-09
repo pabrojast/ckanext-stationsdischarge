@@ -1,0 +1,40 @@
+{% extends "stationsdischarge/base.html" %}
+
+{% block subtitle %}
+  {% if is_edit %}{{ _('Edit Station') }}{% else %}{{ _('New Station') }}{% endif %}
+{% endblock %}
+
+{% block primary_content_inner %}
+  <h1>
+    {% if is_edit %}
+      <i class="fa fa-pencil"></i> {{ _('Edit Station') }}
+      {% if data.title %} — {{ data.title }}{% endif %}
+    {% else %}
+      <i class="fa fa-plus"></i> {{ _('New Hydrometric Station') }}
+    {% endif %}
+  </h1>
+
+  {% snippet "stationsdischarge/station_form.html",
+     data=data, errors=errors, error_summary=error_summary,
+     organizations=organizations, form_action=form_action, is_edit=is_edit %}
+{% endblock %}
+
+{% block secondary_content %}
+  <div class="module module-narrow module-shallow">
+    <h2 class="module-heading">
+      <i class="fa fa-arrow-left"></i>
+      <a href="{{ h.url_for('hydro_stations.index') }}">{{ _('Back to Stations') }}</a>
+    </h2>
+  </div>
+
+  <div class="module module-narrow module-shallow">
+    <h2 class="module-heading">
+      <i class="fa fa-info-circle"></i>
+      {{ _('Help') }}
+    </h2>
+    <div class="module-content">
+      <p>{{ _('Fields marked with * are required.') }}</p>
+      <p>{{ _('The rating curve parameters must be valid JSON matching the selected curve type.') }}</p>
+    </div>
+  </div>
+{% endblock %}

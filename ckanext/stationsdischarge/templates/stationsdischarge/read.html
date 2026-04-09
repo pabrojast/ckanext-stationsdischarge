@@ -1,0 +1,187 @@
+{% extends "stationsdischarge/base.html" %}
+
+{% block subtitle %}{{ station.title }} - {{ _('Station') }}{% endblock %}
+
+{% block primary_content_inner %}
+  <div class="station-detail-header">
+    <div class="station-badges">
+      <span class="badge {{ h.stationsdischarge_status_badge_class(station.station_status) }}">
+        {{ h.stationsdischarge_station_status_label(station.station_status) }}
+      </span>
+      <span class="badge {{ h.stationsdischarge_submission_badge_class(station.submission_status) }}">
+        {{ h.stationsdischarge_submission_status_label(station.submission_status) }}
+      </span>
+    </div>
+    <h1>{{ station.title }}</h1>
+    {% if station.notes %}
+      <p class="text-muted">{{ station.notes }}</p>
+    {% endif %}
+
+    {# Action buttons #}
+    <div class="btn-group">
+      {% if h.check_access('station_update', {'id': station.id}) %}
+        <a href="{{ h.url_for('hydro_stations.edit', name=station.name) }}" class="btn btn-primary">
+          <i class="fa fa-pencil"></i> {{ _('Edit') }}
+        </a>
+      {% endif %}
+      {% if h.check_access('station_delete', {'id': station.id}) %}
+        <a href="{{ h.url_for('hydro_stations.delete', name=station.name) }}" class="btn btn-danger">
+          <i class="fa fa-trash"></i> {{ _('Delete') }}
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Station Identification ── #}
+  <div class="station-detail-section">
+    <h2><i class="fa fa-id-card"></i> {{ _('Station Identification') }}</h2>
+    <table class="station-detail-table">
+      <tr><th>{{ _('Station ID') }}</th><td>{{ station.station_id }}</td></tr>
+      <tr><th>{{ _('URL Slug') }}</th><td>{{ station.name }}</td></tr>
+      {% if org %}
+        <tr><th>{{ _('Organization') }}</th><td>{{ org.display_name or org.title }}</td></tr>
+      {% endif %}
+      <tr><th>{{ _('Status') }}</th>
+        <td><span class="badge {{ h.stationsdischarge_status_badge_class(station.station_status) }}">{{ h.stationsdischarge_station_status_label(station.station_status) }}</span></td>
+      </tr>
+      {% if station.tag_string %}
+        <tr><th>{{ _('Tags') }}</th><td>{{ station.tag_string }}</td></tr>
+      {% endif %}
+      {% if creator %}
+        <tr><th>{{ _('Created by') }}</th><td>{{ creator.display_name or creator.name }}</td></tr>
+      {% endif %}
+      {% if station.created %}
+        <tr><th>{{ _('Created') }}</th><td>{{ station.created }}</td></tr>
+      {% endif %}
+      {% if station.modified %}
+        <tr><th>{{ _('Last Modified') }}</th><td>{{ station.modified }}</td></tr>
+      {% endif %}
+    </table>
+  </div>
+
+  {# ── Location ── #}
+  <div class="station-detail-section">
+    <h2><i class="fa fa-map-marker"></i> {{ _('Location') }}</h2>
+    <table class="station-detail-table">
+      <tr><th>{{ _('Latitude') }}</th><td>{{ station.latitude }}</td></tr>
+      <tr><th>{{ _('Longitude') }}</th><td>{{ station.longitude }}</td></tr>
+      {% if station.river_name %}
+        <tr><th>{{ _('River / Water Body') }}</th><td>{{ station.river_name }}</td></tr>
+      {% endif %}
+      {% if station.basin_name %}
+        <tr><th>{{ _('Basin') }}</th><td>{{ station.basin_name }}</td></tr>
+      {% endif %}
+      {% if station.country %}
+        <tr><th>{{ _('Country') }}</th><td>{{ station.country }}</td></tr>
+      {% endif %}
+      {% if station.elevation_masl %}
+        <tr><th>{{ _('Elevation (m a.s.l.)') }}</th><td>{{ station.elevation_masl }}</td></tr>
+      {% endif %}
+    </table>
+  </div>
+
+  {# ── IoT Sensor Connection ── #}
+  <div class="station-detail-section">
+    <h2><i class="fa fa-plug"></i> {{ _('IoT Sensor Connection') }}</h2>
+    <table class="station-detail-table">
+      <tr><th>{{ _('ThingsBoard Entity ID') }}</th><td><code>{{ station.thingsboard_entity_id }}</code></td></tr>
+      {% if station.thingsboard_device_id %}
+        <tr><th>{{ _('ThingsBoard Device ID') }}</th><td><code>{{ station.thingsboard_device_id }}</code></td></tr>
+      {% endif %}
+      <tr><th>{{ _('Telemetry Key') }}</th><td><code>{{ station.thingsboard_telemetry_key }}</code></td></tr>
+      <tr><th>{{ _('Observed Variable') }}</th><td>{{ h.stationsdischarge_observed_variable_label(station.observed_variable) }}</td></tr>
+    </table>
+  </div>
+
+  {# ── Measurement Units ── #}
+  <div class="station-detail-section">
+    <h2><i class="fa fa-balance-scale"></i> {{ _('Measurement Units') }}</h2>
+    <table class="station-detail-table">
+      <tr><th>{{ _('Level Unit') }}</th><td>{{ h.stationsdischarge_unit_level_label(station.unit_level) }}</td></tr>
+      <tr><th>{{ _('Flow Unit') }}</th><td>{{ h.stationsdischarge_unit_flow_label(station.unit_flow) }}</td></tr>
+    </table>
+  </div>
+
+  {# ── Rating Curve ── #}
+  <div class="station-detail-section">
+    <h2><i class="fa fa-line-chart"></i> {{ _('Rating Curve') }}</h2>
+    <table class="station-detail-table">
+      <tr><th>{{ _('Curve Type') }}</th><td>{{ h.stationsdischarge_curve_type_label(station.curve_type) }}</td></tr>
+      <tr><th>{{ _('Summary') }}</th><td>{{ h.stationsdischarge_format_curve_summary(station.curve_type, station.curve_params_json) }}</td></tr>
+      <tr>
+        <th>{{ _('Parameters (JSON)') }}</th>
+        <td>
+          <div class="curve-params-display">{{ station.curve_params_json }}</div>
+        </td>
+      </tr>
+      {% if station.curve_valid_from %}
+        <tr><th>{{ _('Valid From') }}</th><td>{{ station.curve_valid_from }}</td></tr>
+      {% endif %}
+      {% if station.curve_valid_to %}
+        <tr><th>{{ _('Valid To') }}</th><td>{{ station.curve_valid_to }}</td></tr>
+      {% endif %}
+      {% if station.curve_notes %}
+        <tr><th>{{ _('Notes') }}</th><td>{{ station.curve_notes }}</td></tr>
+      {% endif %}
+    </table>
+  </div>
+
+  {# ── Workflow Info ── #}
+  {% if station.submission_status != 'approved' %}
+  <div class="station-detail-section">
+    <h2><i class="fa fa-tasks"></i> {{ _('Submission Workflow') }}</h2>
+    <table class="station-detail-table">
+      <tr><th>{{ _('Status') }}</th>
+        <td><span class="badge {{ h.stationsdischarge_submission_badge_class(station.submission_status) }}">{{ h.stationsdischarge_submission_status_label(station.submission_status) }}</span></td>
+      </tr>
+      {% if station.submitted_at %}
+        <tr><th>{{ _('Submitted') }}</th><td>{{ station.submitted_at }}</td></tr>
+      {% endif %}
+      {% if station.reviewed_at %}
+        <tr><th>{{ _('Reviewed') }}</th><td>{{ station.reviewed_at }}</td></tr>
+      {% endif %}
+    </table>
+    {# Approval buttons for sysadmin #}
+    {% if h.check_access('station_delete') and station.submission_status == 'pending' %}
+    <div class="station-workflow-buttons">
+      <form method="post" action="{{ h.url_for('hydro_stations.edit', name=station.name) }}" style="display:inline;">
+        {{ h.csrf_input() if 'csrf_input' in h }}
+        <input type="hidden" name="id" value="{{ station.id }}" />
+        <input type="hidden" name="submission_action" value="approve" />
+        <button type="submit" class="btn btn-success"><i class="fa fa-check"></i> {{ _('Approve') }}</button>
+      </form>
+      <form method="post" action="{{ h.url_for('hydro_stations.edit', name=station.name) }}" style="display:inline;">
+        {{ h.csrf_input() if 'csrf_input' in h }}
+        <input type="hidden" name="id" value="{{ station.id }}" />
+        <input type="hidden" name="submission_action" value="reject" />
+        <button type="submit" class="btn btn-danger"><i class="fa fa-times"></i> {{ _('Reject') }}</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+{% endblock %}
+
+{% block secondary_content %}
+  <div class="module module-narrow module-shallow">
+    <h2 class="module-heading">
+      <i class="fa fa-arrow-left"></i>
+      <a href="{{ h.url_for('hydro_stations.index') }}">{{ _('Back to Stations') }}</a>
+    </h2>
+  </div>
+
+  {% if station.spatial %}
+  <div class="module module-narrow module-shallow">
+    <h2 class="module-heading">
+      <i class="fa fa-map"></i>
+      {{ _('Location') }}
+    </h2>
+    <div class="module-content">
+      <p><strong>{{ station.latitude }}</strong>, <strong>{{ station.longitude }}</strong></p>
+      {% if station.country %}
+        <p>{{ station.country }}</p>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "stationsdischarge/base.html" %}
+
+{% block subtitle %}{{ _('Delete Station') }} - {{ station.title }}{% endblock %}
+
+{% block primary_content_inner %}
+  <div class="station-delete-confirm">
+    <h2><i class="fa fa-exclamation-triangle"></i> {{ _('Delete Station') }}</h2>
+    <p>{{ _('Are you sure you want to delete the station:') }}</p>
+    <h3>{{ station.title }}</h3>
+    <p class="text-muted">{{ _('Station ID:') }} {{ station.station_id }}</p>
+    <p class="text-danger"><strong>{{ _('This action cannot be undone.') }}</strong></p>
+
+    <form method="post" action="{{ h.url_for('hydro_stations.delete', name=station.name) }}">
+      {{ h.csrf_input() if 'csrf_input' in h }}
+      <div class="btn-group" style="margin-top: 20px;">
+        <a href="{{ h.url_for('hydro_stations.show', name=station.name) }}" class="btn btn-default">
+          <i class="fa fa-arrow-left"></i> {{ _('Cancel') }}
+        </a>
+        <button type="submit" class="btn btn-danger">
+          <i class="fa fa-trash"></i> {{ _('Confirm Delete') }}
+        </button>
+      </div>
+    </form>
+  </div>
+{% endblock %}
