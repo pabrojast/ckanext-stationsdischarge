@@ -72,16 +72,6 @@ dataset_fields:
 
 # ── Group: Station Identification ────────────────────
 
-- start_form_page:
-    title:
-      en: Station Info
-      es: Información de la Estación
-      fr: Informations sur la Station
-    description:
-      en: Basic identification, location, IoT connection, units, and rating curve.
-      es: Identificación básica, ubicación, conexión IoT, unidades y curva de descarga.
-      fr: Identification de base, localisation, connexion IoT, unités et courbe de tarage.
-
 # Station name (M)
 - field_name: title
   label:
@@ -577,16 +567,6 @@ dataset_fields:
 #  RESOURCE FIELDS
 # ══════════════════════════════════════════════════════
 resource_fields:
-
-- start_form_page:
-    title:
-      en: Resources
-      es: Recursos
-      fr: Ressources
-    description:
-      en: "Attach supporting files: gauging reports, H–Q tables (CSV), photos, etc."
-      es: "Adjunte archivos de soporte: informes de aforo, tablas H–Q (CSV), fotos, etc."
-      fr: "Joignez des fichiers complémentaires : rapports de jaugeage, tables H–Q (CSV), photos, etc."
 
 # Resource URL / upload (M)
 - field_name: url
