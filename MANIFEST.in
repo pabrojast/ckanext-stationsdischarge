@@ -1,0 +1,5 @@
+include README.md
+include LICENSE
+recursive-include ckanext/stationsdischarge/schemas *.yaml
+recursive-include ckanext/stationsdischarge/templates *.html
+recursive-include ckanext/stationsdischarge/public *

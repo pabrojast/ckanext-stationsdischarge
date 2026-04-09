@@ -1,0 +1,677 @@
+scheming_version: 2
+dataset_type: hydro_station
+about: "Hydrometric station configuration for ThingsBoard IoT integration and discharge curve management."
+about_url: https://github.com/pabrojast/ckanext-stationsdischarge
+
+form_languages: ["en", "es", "fr"]
+required_language: "en"
+
+schema_version: 1.0
+schema_date: 2026-04-04
+schema_name: hydro_station
+schema_title: Hydrometric Station
+schema_description: Schema for hydrometric stations with ThingsBoard connectivity and rating curve configuration.
+
+schema_form_groups:
+  # ── Dataset form page ──────────────────────────────
+  - form_group_id: station_identity
+    label:
+      en: Station Identification
+      es: Identificación de la Estación
+      fr: Identification de la Station
+    fa_icon: fa-id-card
+
+  - form_group_id: station_location
+    label:
+      en: Location
+      es: Ubicación
+      fr: Localisation
+    fa_icon: fa-map-marker
+
+  - form_group_id: iot_connection
+    label:
+      en: IoT Sensor Connection
+      es: Conexión del Sensor IoT
+      fr: Connexion du Capteur IoT
+    fa_icon: fa-plug
+
+  - form_group_id: measurement_units
+    label:
+      en: Measurement Units
+      es: Unidades de Medida
+      fr: Unités de Mesure
+    fa_icon: fa-balance-scale
+
+  - form_group_id: rating_curve
+    label:
+      en: Rating Curve
+      es: Curva de Descarga
+      fr: Courbe de Tarage
+    fa_icon: fa-line-chart
+
+  # ── Resource form page ─────────────────────────────
+  - form_group_id: resource_title
+    label:
+      en: Title
+      es: Título
+      fr: Titre
+    fa_icon: fa-sticky-note
+
+  - form_group_id: resource_details
+    label:
+      en: Resource Details
+      es: Detalles del Recurso
+      fr: Détails de la Ressource
+    fa_icon: fa-file
+
+
+# ══════════════════════════════════════════════════════
+#  DATASET FIELDS
+# ══════════════════════════════════════════════════════
+dataset_fields:
+
+# ── Group: Station Identification ────────────────────
+
+- start_form_page:
+    title:
+      en: Station Info
+      es: Información de la Estación
+      fr: Informations sur la Station
+    description:
+      en: Basic identification, location, IoT connection, units, and rating curve.
+      es: Identificación básica, ubicación, conexión IoT, unidades y curva de descarga.
+      fr: Identification de base, localisation, connexion IoT, unités et courbe de tarage.
+
+# Station name (M)
+- field_name: title
+  label:
+    en: Station Name
+    es: Nombre de la Estación
+    fr: Nom de la Station
+  preset: title
+  required: true
+  form_placeholder:
+    en: "e.g. Río Maipo – Puente El Manzano"
+    es: "ej. Río Maipo – Puente El Manzano"
+    fr: "ex. Río Maipo – Puente El Manzano"
+  form_group_id: station_identity
+
+# URL slug (M – auto)
+- field_name: name
+  label:
+    en: URL
+    es: URL
+    fr: URL
+  preset: dataset_slug
+  form_placeholder: "e.g. est-rio-maipo-puente-manzano"
+  form_group_id: station_identity
+
+# Station ID (M) – unique identifier used by the rating-service
+- field_name: station_id
+  label:
+    en: Station ID
+    es: ID de Estación
+    fr: ID de la Station
+  required: true
+  validators: "not_empty unicode_safe"
+  form_placeholder:
+    en: "e.g. EST-MAIPO-001"
+    es: "ej. EST-MAIPO-001"
+    fr: "ex. EST-MAIPO-001"
+  help_text:
+    en: "Unique identifier for this station. The external rating-service will use this value to query the station configuration."
+    es: "Identificador único de esta estación. El microservicio externo rating-service usará este valor para consultar la configuración."
+    fr: "Identifiant unique de cette station. Le micro-service externe rating-service utilisera cette valeur pour interroger la configuration."
+  help_allow_html: true
+  form_group_id: station_identity
+
+# Organization (M)
+- field_name: owner_org
+  label:
+    en: Organization
+    es: Organización
+    fr: Organisation
+  preset: dataset_organization
+  required: true
+  help_text:
+    en: "Organization responsible for this station."
+    es: "Organización responsable de esta estación."
+    fr: "Organisation responsable de cette station."
+  form_group_id: station_identity
+
+# Station status (M)
+- field_name: station_status
+  label:
+    en: Station Status
+    es: Estado de la Estación
+    fr: État de la Station
+  preset: select
+  required: true
+  form_include_blank_choice: false
+  choices:
+    - label:
+        en: Active
+        es: Activa
+        fr: Active
+      value: active
+    - label:
+        en: Inactive
+        es: Inactiva
+        fr: Inactive
+      value: inactive
+    - label:
+        en: Maintenance
+        es: En Mantenimiento
+        fr: En Maintenance
+      value: maintenance
+  help_text:
+    en: "Current operational status of the station."
+    es: "Estado operacional actual de la estación."
+    fr: "État opérationnel actuel de la station."
+  form_group_id: station_identity
+
+# Description (O)
+- field_name: notes
+  label:
+    en: Description
+    es: Descripción
+    fr: Description
+  form_snippet: markdown.html
+  form_placeholder:
+    en: "Describe the station, its purpose, equipment, etc."
+    es: "Describa la estación, su propósito, equipamiento, etc."
+    fr: "Décrivez la station, son objectif, son équipement, etc."
+  form_group_id: station_identity
+
+# Tags (O)
+- field_name: tag_string
+  label:
+    en: Tags
+    es: Etiquetas
+    fr: Mots-clés
+  preset: tag_string_autocomplete
+  form_placeholder:
+    en: "e.g. hydrology, water level, discharge"
+    es: "ej. hidrología, nivel de agua, caudal"
+    fr: "ex. hydrologie, niveau d'eau, débit"
+  form_group_id: station_identity
+
+
+# ── Group: Location ──────────────────────────────────
+
+# Latitude (M)
+- field_name: latitude
+  label:
+    en: Latitude
+    es: Latitud
+    fr: Latitude
+  required: true
+  validators: "not_empty"
+  form_placeholder: "-33.5982"
+  help_text:
+    en: "Decimal degrees (WGS 84). Range: −90 to 90."
+    es: "Grados decimales (WGS 84). Rango: −90 a 90."
+    fr: "Degrés décimaux (WGS 84). Plage : −90 à 90."
+  form_group_id: station_location
+
+# Longitude (M)
+- field_name: longitude
+  label:
+    en: Longitude
+    es: Longitud
+    fr: Longitude
+  required: true
+  validators: "not_empty"
+  form_placeholder: "-70.3451"
+  help_text:
+    en: "Decimal degrees (WGS 84). Range: −180 to 180."
+    es: "Grados decimales (WGS 84). Rango: −180 a 180."
+    fr: "Degrés décimaux (WGS 84). Plage : −180 à 180."
+  form_group_id: station_location
+
+# Spatial GeoJSON (auto-generated in V2, manual for MVP)
+- field_name: spatial
+  label:
+    en: Spatial Extent
+    es: Extensión Espacial
+    fr: Étendue Spatiale
+  preset: spatial
+  form_placeholder: '{"type": "Point", "coordinates": [-70.3451, -33.5982]}'
+  help_text:
+    en: 'GeoJSON geometry for spatial indexing. For a point station use: <code>{"type": "Point", "coordinates": [longitude, latitude]}</code>'
+    es: 'Geometría GeoJSON para indexación espacial. Para una estación puntual use: <code>{"type": "Point", "coordinates": [longitud, latitud]}</code>'
+    fr: 'Géométrie GeoJSON pour l''indexation spatiale. Pour une station ponctuelle utilisez : <code>{"type": "Point", "coordinates": [longitude, latitude]}</code>'
+  help_allow_html: true
+  form_group_id: station_location
+
+# River name (O)
+- field_name: river_name
+  label:
+    en: River / Water Body
+    es: Río / Cuerpo de Agua
+    fr: Rivière / Plan d'Eau
+  form_placeholder:
+    en: "e.g. Río Maipo"
+    es: "ej. Río Maipo"
+    fr: "ex. Río Maipo"
+  validators: "ignore_missing unicode_safe"
+  form_group_id: station_location
+
+# Basin name (O)
+- field_name: basin_name
+  label:
+    en: Basin
+    es: Cuenca
+    fr: Bassin Versant
+  form_placeholder:
+    en: "e.g. Maipo Basin"
+    es: "ej. Cuenca del Maipo"
+    fr: "ex. Bassin du Maipo"
+  validators: "ignore_missing unicode_safe"
+  form_group_id: station_location
+
+# Country (O)
+- field_name: country
+  label:
+    en: Country
+    es: País
+    fr: Pays
+  form_placeholder:
+    en: "e.g. Chile"
+    es: "ej. Chile"
+    fr: "ex. Chili"
+  validators: "ignore_missing unicode_safe"
+  form_group_id: station_location
+
+# Elevation (O)
+- field_name: elevation_masl
+  label:
+    en: Elevation (m a.s.l.)
+    es: Elevación (m s.n.m.)
+    fr: Altitude (m)
+  form_placeholder: "842"
+  validators: "ignore_missing"
+  help_text:
+    en: "Elevation in metres above sea level."
+    es: "Elevación en metros sobre el nivel del mar."
+    fr: "Altitude en mètres au-dessus du niveau de la mer."
+  form_group_id: station_location
+
+
+# ── Group: IoT Sensor Connection ─────────────────────
+
+# ThingsBoard entity ID (M)
+- field_name: thingsboard_entity_id
+  label:
+    en: ThingsBoard Entity ID
+    es: ID de Entidad ThingsBoard
+    fr: ID d'Entité ThingsBoard
+  required: true
+  validators: "not_empty unicode_safe"
+  form_placeholder: "784f394c-42b6-11ec-81d3-0242ac130003"
+  help_text:
+    en: 'UUID of the entity in ThingsBoard. Find it in <strong>ThingsBoard → Devices → [your device] → Copy Device ID</strong>.'
+    es: 'UUID de la entidad en ThingsBoard. Encuéntrelo en <strong>ThingsBoard → Dispositivos → [su dispositivo] → Copiar ID</strong>.'
+    fr: 'UUID de l''entité dans ThingsBoard. Trouvez-le dans <strong>ThingsBoard → Appareils → [votre appareil] → Copier l''ID</strong>.'
+  help_allow_html: true
+  form_group_id: iot_connection
+
+# ThingsBoard device ID (O – when different from entity)
+- field_name: thingsboard_device_id
+  label:
+    en: ThingsBoard Device ID
+    es: ID de Dispositivo ThingsBoard
+    fr: ID d'Appareil ThingsBoard
+  validators: "ignore_missing unicode_safe"
+  form_placeholder: "784f394c-42b6-11ec-81d3-0242ac130003"
+  help_text:
+    en: "Only if the device ID differs from the entity ID above."
+    es: "Solo si el ID de dispositivo difiere del ID de entidad anterior."
+    fr: "Uniquement si l'ID de l'appareil diffère de l'ID d'entité ci-dessus."
+  form_group_id: iot_connection
+
+# Telemetry key (M)
+- field_name: thingsboard_telemetry_key
+  label:
+    en: Telemetry Key
+    es: Clave de Telemetría
+    fr: Clé de Télémétrie
+  required: true
+  validators: "not_empty unicode_safe"
+  form_placeholder: "water_level"
+  help_text:
+    en: "The telemetry key name in ThingsBoard (e.g. <code>water_level</code>)."
+    es: "El nombre de la clave de telemetría en ThingsBoard (ej. <code>water_level</code>)."
+    fr: "Le nom de la clé de télémétrie dans ThingsBoard (ex. <code>water_level</code>)."
+  help_allow_html: true
+  form_group_id: iot_connection
+
+# Observed variable (M)
+- field_name: observed_variable
+  label:
+    en: Observed Variable
+    es: Variable Observada
+    fr: Variable Observée
+  preset: select
+  required: true
+  form_include_blank_choice: false
+  choices:
+    - label:
+        en: Water Level
+        es: Nivel de Agua
+        fr: Niveau d'Eau
+      value: water_level
+    - label:
+        en: Precipitation
+        es: Precipitación
+        fr: Précipitations
+      value: precipitation
+    - label:
+        en: Discharge
+        es: Caudal
+        fr: Débit
+      value: discharge
+    - label:
+        en: Water Temperature
+        es: Temperatura del Agua
+        fr: Température de l'Eau
+      value: water_temperature
+    - label:
+        en: Sediment Load
+        es: Carga de Sedimentos
+        fr: Charge Sédimentaire
+      value: sediment_load
+    - label:
+        en: Other
+        es: Otra
+        fr: Autre
+      value: other
+  help_text:
+    en: "Primary variable measured by the sensor."
+    es: "Variable principal medida por el sensor."
+    fr: "Variable principale mesurée par le capteur."
+  form_group_id: iot_connection
+
+
+# ── Group: Measurement Units ─────────────────────────
+
+# Unit for water level (M)
+- field_name: unit_level
+  label:
+    en: Level Unit
+    es: Unidad de Nivel
+    fr: Unité de Niveau
+  preset: select
+  required: true
+  form_include_blank_choice: false
+  choices:
+    - label:
+        en: Metres (m)
+        es: Metros (m)
+        fr: Mètres (m)
+      value: m
+    - label:
+        en: Centimetres (cm)
+        es: Centímetros (cm)
+        fr: Centimètres (cm)
+      value: cm
+    - label:
+        en: Millimetres (mm)
+        es: Milímetros (mm)
+        fr: Millimètres (mm)
+      value: mm
+    - label:
+        en: Feet (ft)
+        es: Pies (ft)
+        fr: Pieds (ft)
+      value: ft
+  help_text:
+    en: "Unit of measurement for the water level sensor readings."
+    es: "Unidad de medida para las lecturas del sensor de nivel."
+    fr: "Unité de mesure pour les lectures du capteur de niveau."
+  form_group_id: measurement_units
+
+# Unit for flow / discharge (M)
+- field_name: unit_flow
+  label:
+    en: Flow Unit
+    es: Unidad de Caudal
+    fr: Unité de Débit
+  preset: select
+  required: true
+  form_include_blank_choice: false
+  choices:
+    - label:
+        en: "Cubic metres per second (m³/s)"
+        es: "Metros cúbicos por segundo (m³/s)"
+        fr: "Mètres cubes par seconde (m³/s)"
+      value: "m3/s"
+    - label:
+        en: "Litres per second (l/s)"
+        es: "Litros por segundo (l/s)"
+        fr: "Litres par seconde (l/s)"
+      value: "l/s"
+    - label:
+        en: "Cubic feet per second (ft³/s)"
+        es: "Pies cúbicos por segundo (ft³/s)"
+        fr: "Pieds cubes par seconde (ft³/s)"
+      value: "ft3/s"
+  help_text:
+    en: "Unit of measurement for the computed discharge."
+    es: "Unidad de medida para el caudal calculado."
+    fr: "Unité de mesure pour le débit calculé."
+  form_group_id: measurement_units
+
+
+# ── Group: Rating Curve ──────────────────────────────
+
+# Curve type (M)
+- field_name: curve_type
+  label:
+    en: Curve Type
+    es: Tipo de Curva
+    fr: Type de Courbe
+  preset: select
+  required: true
+  form_include_blank_choice: false
+  choices:
+    - label:
+        en: "Power law  Q = a·(H − h₀)ᵇ"
+        es: "Ley de potencia  Q = a·(H − h₀)ᵇ"
+        fr: "Loi puissance  Q = a·(H − h₀)ᵇ"
+      value: power
+    - label:
+        en: "Linear segments"
+        es: "Segmentos lineales"
+        fr: "Segments linéaires"
+      value: linear_segments
+    - label:
+        en: "Table interpolation (H–Q table)"
+        es: "Interpolación tabular (tabla H–Q)"
+        fr: "Interpolation tabulaire (table H–Q)"
+      value: table_interpolation
+  help_text:
+    en: "Type of rating curve used to convert water level to discharge."
+    es: "Tipo de curva de descarga usada para convertir nivel de agua a caudal."
+    fr: "Type de courbe de tarage utilisée pour convertir le niveau d'eau en débit."
+  form_group_id: rating_curve
+
+# Curve parameters – JSON (M)
+- field_name: curve_params_json
+  label:
+    en: Curve Parameters (JSON)
+    es: Parámetros de la Curva (JSON)
+    fr: Paramètres de la Courbe (JSON)
+  required: true
+  validators: "not_empty"
+  form_snippet: textarea.html
+  form_attrs:
+    rows: 10
+    style: "font-family: monospace; font-size: 13px;"
+  form_placeholder: |
+    Power:      {"a": 2.5, "b": 1.8, "h0": 0.15}
+    Segments:   {"segments": [{"h_min":0,"h_max":1,"slope":2.5,"intercept":0}, ...]}
+    Table:      {"table": [{"h":0,"q":0}, {"h":0.5,"q":1.2}, ...]}
+  help_text:
+    en: >
+      JSON object with the rating-curve parameters. Format depends on <em>Curve Type</em>:<br>
+      <strong>Power</strong>: <code>{"a": 2.5, "b": 1.8, "h0": 0.15}</code> → Q = a·(H − h₀)ᵇ<br>
+      <strong>Linear segments</strong>: <code>{"segments": [{"h_min": 0, "h_max": 1, "slope": 2.5, "intercept": 0}, ...]}</code><br>
+      <strong>Table interpolation</strong>: <code>{"table": [{"h": 0, "q": 0}, {"h": 0.5, "q": 1.2}, ...]}</code>
+    es: >
+      Objeto JSON con los parámetros de la curva de descarga. El formato depende del <em>Tipo de Curva</em>:<br>
+      <strong>Power</strong>: <code>{"a": 2.5, "b": 1.8, "h0": 0.15}</code> → Q = a·(H − h₀)ᵇ<br>
+      <strong>Segmentos lineales</strong>: <code>{"segments": [{"h_min": 0, "h_max": 1, "slope": 2.5, "intercept": 0}, ...]}</code><br>
+      <strong>Interpolación tabular</strong>: <code>{"table": [{"h": 0, "q": 0}, {"h": 0.5, "q": 1.2}, ...]}</code>
+    fr: >
+      Objet JSON avec les paramètres de la courbe de tarage. Le format dépend du <em>Type de Courbe</em> :<br>
+      <strong>Power</strong> : <code>{"a": 2.5, "b": 1.8, "h0": 0.15}</code> → Q = a·(H − h₀)ᵇ<br>
+      <strong>Segments linéaires</strong> : <code>{"segments": [{"h_min": 0, "h_max": 1, "slope": 2.5, "intercept": 0}, ...]}</code><br>
+      <strong>Interpolation tabulaire</strong> : <code>{"table": [{"h": 0, "q": 0}, {"h": 0.5, "q": 1.2}, ...]}</code>
+  help_allow_html: true
+  form_group_id: rating_curve
+
+# Curve valid from (O)
+- field_name: curve_valid_from
+  label:
+    en: Valid From
+    es: Válida Desde
+    fr: Valide Depuis
+  preset: date
+  validators: "ignore_missing"
+  help_text:
+    en: "Start date for the validity of this rating curve."
+    es: "Fecha de inicio de validez de esta curva de descarga."
+    fr: "Date de début de validité de cette courbe de tarage."
+  form_group_id: rating_curve
+
+# Curve valid to (O)
+- field_name: curve_valid_to
+  label:
+    en: Valid To
+    es: Válida Hasta
+    fr: Valide Jusqu'au
+  preset: date
+  validators: "ignore_missing"
+  help_text:
+    en: "End date for the validity of this rating curve. Leave empty if current."
+    es: "Fecha de fin de validez. Dejar vacío si es la curva vigente."
+    fr: "Date de fin de validité. Laisser vide si la courbe est en vigueur."
+  form_group_id: rating_curve
+
+# Curve notes (O)
+- field_name: curve_notes
+  label:
+    en: Curve Notes
+    es: Notas de la Curva
+    fr: Notes sur la Courbe
+  validators: "ignore_missing unicode_safe"
+  form_placeholder:
+    en: "e.g. Calibrated with 12 gauging measurements, R² = 0.97"
+    es: "ej. Calibrada con 12 aforos, R² = 0.97"
+    fr: "ex. Calibrée avec 12 jaugeages, R² = 0.97"
+  form_group_id: rating_curve
+
+
+# ══════════════════════════════════════════════════════
+#  RESOURCE FIELDS
+# ══════════════════════════════════════════════════════
+resource_fields:
+
+- start_form_page:
+    title:
+      en: Resources
+      es: Recursos
+      fr: Ressources
+    description:
+      en: "Attach supporting files: gauging reports, H–Q tables (CSV), photos, etc."
+      es: "Adjunte archivos de soporte: informes de aforo, tablas H–Q (CSV), fotos, etc."
+      fr: "Joignez des fichiers complémentaires : rapports de jaugeage, tables H–Q (CSV), photos, etc."
+
+# Resource URL / upload (M)
+- field_name: url
+  label:
+    en: Resource URL / File
+    es: URL / Archivo del Recurso
+    fr: URL / Fichier de la Ressource
+  preset: resource_url_upload
+  form_group_id: resource_title
+
+# Resource name (O)
+- field_name: name
+  label:
+    en: Name
+    es: Nombre
+    fr: Nom
+  form_placeholder:
+    en: "e.g. Gauging Report 2024-Q1"
+    es: "ej. Informe de Aforos 2024-Q1"
+    fr: "ex. Rapport de Jaugeage 2024-Q1"
+  form_group_id: resource_title
+
+# Resource description (O)
+- field_name: description
+  label:
+    en: Description
+    es: Descripción
+    fr: Description
+  form_snippet: markdown.html
+  form_placeholder:
+    en: "Brief description of this resource."
+    es: "Descripción breve de este recurso."
+    fr: "Brève description de cette ressource."
+  form_group_id: resource_details
+
+# Resource format (O)
+- field_name: format
+  label:
+    en: Format
+    es: Formato
+    fr: Format
+  preset: resource_format_autocomplete
+  form_group_id: resource_details
+
+# Resource type (O) – specific to hydro stations
+- field_name: resource_type
+  label:
+    en: Resource Type
+    es: Tipo de Recurso
+    fr: Type de Ressource
+  preset: select
+  form_include_blank_choice: true
+  choices:
+    - label:
+        en: Gauging Report
+        es: Informe de Aforo
+        fr: Rapport de Jaugeage
+      value: gauging_report
+    - label:
+        en: H–Q Table (CSV)
+        es: Tabla H–Q (CSV)
+        fr: Table H–Q (CSV)
+      value: hq_table
+    - label:
+        en: Rating Curve Plot
+        es: Gráfico de Curva de Descarga
+        fr: Graphique de Courbe de Tarage
+      value: curve_plot
+    - label:
+        en: Photo
+        es: Fotografía
+        fr: Photographie
+      value: photo
+    - label:
+        en: GeoJSON Layer
+        es: Capa GeoJSON
+        fr: Couche GeoJSON
+      value: geojson
+    - label:
+        en: Other
+        es: Otro
+        fr: Autre
+      value: other
+  help_text:
+    en: "Type of supporting resource."
+    es: "Tipo de recurso de soporte."
+    fr: "Type de ressource complémentaire."
+  form_group_id: resource_details
