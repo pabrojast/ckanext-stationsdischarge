@@ -44,36 +44,10 @@ def _slugify(title):
 
 
 def _validate_data(data_dict, schema, context):
-    """Run validation and return cleaned data + errors."""
-    errors = {}
-    clean = {}
-    for field, validators in schema.items():
-        value = data_dict.get(field)
-        field_errors = []
-        for validator in validators:
-            try:
-                # Handle cross-field validators (4-arg signature)
-                import inspect
-                sig = inspect.signature(validator)
-                if len(sig.parameters) >= 4:
-                    fake_key = field
-                    fake_data = data_dict.copy()
-                    fake_errors = {field: []}
-                    validator(fake_key, fake_data, fake_errors, context)
-                    value = fake_data.get(field, value)
-                    field_errors.extend(fake_errors.get(field, []))
-                elif len(sig.parameters) >= 2:
-                    value = validator(value, context)
-                else:
-                    value = validator(value)
-            except toolkit.Invalid as e:
-                field_errors.append(str(e))
-                break
-        if field_errors:
-            errors[field] = field_errors
-        else:
-            clean[field] = value
-    return clean, errors
+    """Run validation using CKAN's native navl validate."""
+    from ckan.lib.navl.dictization_functions import validate
+    data, errors = validate(data_dict, schema, context)
+    return data, errors
 
 
 def station_create(context, data_dict):
