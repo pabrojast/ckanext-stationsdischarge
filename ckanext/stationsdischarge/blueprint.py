@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 
 from flask import Blueprint, Response
 import ckan.model as model
@@ -421,13 +422,13 @@ def discharge_csv(name):
         writer.writerow(row)
 
     csv_content = output.getvalue()
-    filename = "%s_discharge.csv" % result.get("station_name", name)
+    filename = re.sub(r'[^\w\-.]', '_', result.get("station_name", name)) + "_discharge.csv"
 
     return Response(
         csv_content,
         mimetype="text/csv",
         headers={
-            "Content-Disposition": "attachment; filename=%s" % filename,
+            "Content-Disposition": 'attachment; filename="%s"' % filename,
             "Access-Control-Allow-Origin": "*",
         },
     )

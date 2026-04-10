@@ -6,8 +6,9 @@ import logging
 import math
 import os
 import time
-import urllib.request
 import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
 import re
 
@@ -402,7 +403,10 @@ def _compute_discharge(h, curve_type, curve_params):
         diff = h - h0
         if diff < 0:
             return 0.0
-        return round(a * math.pow(diff, b), 4)
+        try:
+            return round(a * math.pow(diff, b), 4)
+        except (OverflowError, ValueError):
+            return None
 
     if curve_type == "linear_segments":
         segments = curve_params.get("segments", [])
@@ -451,16 +455,19 @@ def _compute_discharge(h, curve_type, curve_params):
 def _fetch_telemetry(tb_url, tb_api_key, entity_id, keys, start_ts=None,
                      end_ts=None, limit=100):
     """Fetch telemetry from ThingsBoard for a device."""
+    safe_id = urllib.parse.quote(str(entity_id), safe="-")
+    if "/" in entity_id or ".." in entity_id:
+        raise toolkit.ValidationError({"thingsboard_entity_id": "Invalid entity ID"})
     if start_ts and end_ts:
         api_path = (
             "/api/plugins/telemetry/DEVICE/%s/values/timeseries"
             "?keys=%s&startTs=%s&endTs=%s&limit=%s"
-            % (entity_id, keys, start_ts, end_ts, limit)
+            % (safe_id, keys, start_ts, end_ts, limit)
         )
     else:
         api_path = (
             "/api/plugins/telemetry/DEVICE/%s/values/timeseries"
-            "?keys=%s" % (entity_id, keys)
+            "?keys=%s" % (safe_id, keys)
         )
     return _tb_request(tb_url, tb_api_key, api_path)
 
