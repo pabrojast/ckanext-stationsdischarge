@@ -1,8 +1,9 @@
 """Flask Blueprint with routes for hydro station management."""
 
+import json
 import logging
 
-from flask import Blueprint
+from flask import Blueprint, Response
 import ckan.model as model
 import ckan.plugins.toolkit as toolkit
 import ckan.lib.helpers as h
@@ -116,6 +117,46 @@ def new():
         "is_edit": False,
     }
     return toolkit.render("stationsdischarge/edit_base.html", extra_vars=extra_vars)
+
+
+# ── GEOJSON ──────────────────────────────────────────
+
+@hydro_stations.route("/geojson", methods=["GET"])
+def geojson():
+    """Return all approved stations as GeoJSON FeatureCollection.
+
+    Query params: org_id, station_status, q, include_telemetry
+    """
+    context = _get_context()
+    data_dict = {
+        "org_id": toolkit.request.args.get("org_id", ""),
+        "station_status": toolkit.request.args.get("station_status", ""),
+        "q": toolkit.request.args.get("q", ""),
+        "include_telemetry": toolkit.request.args.get("include_telemetry", ""),
+    }
+
+    try:
+        result = toolkit.get_action("station_geojson")(context, data_dict)
+    except toolkit.NotAuthorized:
+        return Response(
+            json.dumps({"error": "Not authorized"}),
+            status=403, mimetype="application/json",
+        )
+    except Exception as e:
+        log.error("Error generating GeoJSON: %s", e)
+        return Response(
+            json.dumps({"error": str(e)}),
+            status=500, mimetype="application/json",
+        )
+
+    return Response(
+        json.dumps(result, ensure_ascii=False),
+        mimetype="application/geo+json",
+        headers={
+            "Content-Disposition": "inline; filename=hydro_stations.geojson",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
 
 
 # ── SHOW ─────────────────────────────────────────────
@@ -238,6 +279,102 @@ def delete(name):
 
     extra_vars = {"station": station}
     return toolkit.render("stationsdischarge/confirm_delete.html", extra_vars=extra_vars)
+
+
+# ── DISCHARGE ────────────────────────────────────────
+
+@hydro_stations.route("/<name>/discharge", methods=["GET"])
+def discharge(name):
+    """Return telemetry data with rating curve discharge for a station.
+
+    Query params: keys, start_ts, end_ts, limit
+    """
+    context = _get_context()
+    data_dict = {
+        "id": name,
+        "keys": toolkit.request.args.get("keys", ""),
+        "start_ts": toolkit.request.args.get("start_ts", ""),
+        "end_ts": toolkit.request.args.get("end_ts", ""),
+        "limit": toolkit.request.args.get("limit", "100"),
+    }
+
+    try:
+        result = toolkit.get_action("station_discharge")(context, data_dict)
+    except toolkit.ObjectNotFound:
+        return Response(
+            json.dumps({"error": "Station not found"}),
+            status=404, mimetype="application/json",
+        )
+    except toolkit.NotAuthorized:
+        return Response(
+            json.dumps({"error": "Not authorized"}),
+            status=403, mimetype="application/json",
+        )
+    except toolkit.ValidationError as e:
+        return Response(
+            json.dumps({"error": e.error_dict}),
+            status=400, mimetype="application/json",
+        )
+    except Exception as e:
+        log.error("Error computing discharge for %s: %s", name, e)
+        return Response(
+            json.dumps({"error": str(e)}),
+            status=500, mimetype="application/json",
+        )
+
+    return Response(
+        json.dumps(result, ensure_ascii=False),
+        mimetype="application/json",
+        headers={"Access-Control-Allow-Origin": "*"},
+    )
+
+
+# ── TELEMETRY (GET) ──────────────────────────────────
+
+@hydro_stations.route("/<name>/telemetry", methods=["GET"])
+def telemetry(name):
+    """Return raw telemetry data from ThingsBoard for a station.
+
+    Query params: keys, start_ts, end_ts, limit
+    """
+    context = _get_context()
+    data_dict = {
+        "id": name,
+        "keys": toolkit.request.args.get("keys", ""),
+        "start_ts": toolkit.request.args.get("start_ts", ""),
+        "end_ts": toolkit.request.args.get("end_ts", ""),
+        "limit": toolkit.request.args.get("limit", "100"),
+    }
+
+    try:
+        result = toolkit.get_action("station_telemetry")(context, data_dict)
+    except toolkit.ObjectNotFound:
+        return Response(
+            json.dumps({"error": "Station not found"}),
+            status=404, mimetype="application/json",
+        )
+    except toolkit.NotAuthorized:
+        return Response(
+            json.dumps({"error": "Not authorized"}),
+            status=403, mimetype="application/json",
+        )
+    except toolkit.ValidationError as e:
+        return Response(
+            json.dumps({"error": e.error_dict}),
+            status=400, mimetype="application/json",
+        )
+    except Exception as e:
+        log.error("Error fetching telemetry for %s: %s", name, e)
+        return Response(
+            json.dumps({"error": str(e)}),
+            status=500, mimetype="application/json",
+        )
+
+    return Response(
+        json.dumps(result, ensure_ascii=False),
+        mimetype="application/json",
+        headers={"Access-Control-Allow-Origin": "*"},
+    )
 
 
 # ── HELPERS ──────────────────────────────────────────

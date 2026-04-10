@@ -1,8 +1,13 @@
-"""CKAN action functions for hydro stations (CRUD + list)."""
+"""CKAN action functions for hydro stations (CRUD + list + telemetry)."""
 
 import datetime
 import json
 import logging
+import math
+import os
+import time
+import urllib.request
+import urllib.error
 import uuid
 import re
 
@@ -309,6 +314,159 @@ def station_list(context, data_dict):
     }
 
 
+def _get_tb_config():
+    """Return ThingsBoard URL and API key from environment."""
+    tb_url = os.environ.get(
+        "CKANEXT__STATIONSDISCHARGE__TB_URL",
+        os.environ.get("TB_URL", "https://tb.ihp-wins.unesco.org"),
+    )
+    tb_api_key = os.environ.get(
+        "CKANEXT__STATIONSDISCHARGE__TB_API_KEY",
+        os.environ.get("TB_API_KEY", ""),
+    )
+    return tb_url, tb_api_key
+
+
+def _tb_request(tb_url, tb_api_key, api_path):
+    """Make an authenticated request to ThingsBoard and return parsed JSON."""
+    url = tb_url.rstrip("/") + api_path
+    req = urllib.request.Request(url)
+    req.add_header("X-Authorization", "ApiKey " + tb_api_key)
+    req.add_header("Content-Type", "application/json")
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace") if e.fp else ""
+        log.error("ThingsBoard API error %s: %s", e.code, body)
+        raise toolkit.ValidationError(
+            {"thingsboard": ["ThingsBoard API returned HTTP %s" % e.code]}
+        )
+    except urllib.error.URLError as e:
+        log.error("ThingsBoard connection error: %s", e.reason)
+        raise toolkit.ValidationError(
+            {"thingsboard": ["Cannot connect to ThingsBoard: %s" % e.reason]}
+        )
+
+
+def _resolve_station(data_dict):
+    """Resolve a station from id/name/station_id, or raise."""
+    station_ref = data_dict.get("id") or data_dict.get("name")
+    if not station_ref:
+        raise toolkit.ValidationError({"id": ["Missing value"]})
+
+    station = (station_db.HydroStation.get(id=station_ref)
+               or station_db.HydroStation.get(name=station_ref)
+               or station_db.HydroStation.get(station_id=station_ref))
+
+    if not station:
+        raise toolkit.ObjectNotFound("Station not found: %s" % station_ref)
+    return station
+
+
+def _check_station_access(context, station):
+    """Run access check for reading a station."""
+    toolkit.check_access("station_show", context, {
+        "id": station.id,
+        "submission_status": station.submission_status,
+        "user_id": station.user_id,
+        "owner_org": station.owner_org,
+    })
+
+
+# ── Rating curve calculation ─────────────────────────
+
+def _compute_discharge(h, curve_type, curve_params):
+    """Apply the rating curve to convert water level *h* to discharge *Q*.
+
+    Supported curve types:
+    - **power**: Q = a * (h - h0)^b
+    - **linear_segments**: piecewise Q = slope*h + intercept
+    - **table_interpolation**: linear interpolation on an H-Q table
+
+    Returns Q (float) or None if computation is not possible.
+    """
+    if h is None or curve_params is None:
+        return None
+
+    try:
+        h = float(h)
+    except (ValueError, TypeError):
+        return None
+
+    if curve_type == "power":
+        a = float(curve_params.get("a", 0))
+        b = float(curve_params.get("b", 1))
+        h0 = float(curve_params.get("h0", 0))
+        diff = h - h0
+        if diff < 0:
+            return 0.0
+        return round(a * math.pow(diff, b), 4)
+
+    if curve_type == "linear_segments":
+        segments = curve_params.get("segments", [])
+        for seg in segments:
+            h_min = float(seg.get("h_min", 0))
+            h_max = float(seg.get("h_max", float("inf")))
+            if h_min <= h <= h_max:
+                slope = float(seg.get("slope", 0))
+                intercept = float(seg.get("intercept", 0))
+                return round(slope * h + intercept, 4)
+        # Outside all segments — extrapolate from last
+        if segments:
+            seg = segments[-1]
+            slope = float(seg.get("slope", 0))
+            intercept = float(seg.get("intercept", 0))
+            return round(slope * h + intercept, 4)
+        return None
+
+    if curve_type == "table_interpolation":
+        table = curve_params.get("table", [])
+        if not table:
+            return None
+        table = sorted(table, key=lambda p: float(p["h"]))
+        # Below table range
+        if h <= float(table[0]["h"]):
+            return float(table[0]["q"])
+        # Above table range
+        if h >= float(table[-1]["h"]):
+            return float(table[-1]["q"])
+        # Interpolate
+        for i in range(len(table) - 1):
+            h1 = float(table[i]["h"])
+            h2 = float(table[i + 1]["h"])
+            if h1 <= h <= h2:
+                q1 = float(table[i]["q"])
+                q2 = float(table[i + 1]["q"])
+                if h2 == h1:
+                    return q1
+                frac = (h - h1) / (h2 - h1)
+                return round(q1 + frac * (q2 - q1), 4)
+        return None
+
+    return None
+
+
+def _fetch_telemetry(tb_url, tb_api_key, entity_id, keys, start_ts=None,
+                     end_ts=None, limit=100):
+    """Fetch telemetry from ThingsBoard for a device."""
+    if start_ts and end_ts:
+        api_path = (
+            "/api/plugins/telemetry/DEVICE/%s/values/timeseries"
+            "?keys=%s&startTs=%s&endTs=%s&limit=%s"
+            % (entity_id, keys, start_ts, end_ts, limit)
+        )
+    else:
+        api_path = (
+            "/api/plugins/telemetry/DEVICE/%s/values/timeseries"
+            "?keys=%s" % (entity_id, keys)
+        )
+    return _tb_request(tb_url, tb_api_key, api_path)
+
+
+# ── Actions ──────────────────────────────────────────
+
 def station_telemetry(context, data_dict):
     """Fetch latest telemetry data from ThingsBoard for a station.
 
@@ -319,36 +477,10 @@ def station_telemetry(context, data_dict):
     :param limit: Max data points (default 100)
     :returns: Dict with station info and telemetry data
     """
-    import os
-    import time
-    import urllib.request
-    import urllib.error
+    station = _resolve_station(data_dict)
+    _check_station_access(context, station)
 
-    station_ref = data_dict.get("id") or data_dict.get("name")
-    if not station_ref:
-        raise toolkit.ValidationError({"id": ["Missing value"]})
-
-    station = (station_db.HydroStation.get(id=station_ref)
-               or station_db.HydroStation.get(name=station_ref)
-               or station_db.HydroStation.get(station_id=station_ref))
-
-    if not station:
-        raise toolkit.ObjectNotFound(f"Station not found: {station_ref}")
-
-    toolkit.check_access("station_show", context,
-                         {"id": station.id, "submission_status": station.submission_status,
-                          "user_id": station.user_id, "owner_org": station.owner_org})
-
-    # ThingsBoard config
-    tb_url = os.environ.get(
-        "CKANEXT__STATIONSDISCHARGE__TB_URL",
-        os.environ.get("TB_URL", "https://tb.ihp-wins.unesco.org"),
-    )
-    tb_api_key = os.environ.get(
-        "CKANEXT__STATIONSDISCHARGE__TB_API_KEY",
-        os.environ.get("TB_API_KEY", ""),
-    )
-
+    tb_url, tb_api_key = _get_tb_config()
     if not tb_api_key:
         raise toolkit.ValidationError(
             {"thingsboard": ["ThingsBoard API key not configured (TB_API_KEY env var)"]}
@@ -362,46 +494,17 @@ def station_telemetry(context, data_dict):
 
     keys = data_dict.get("keys") or station.thingsboard_telemetry_key or "fDistance"
 
-    # Build ThingsBoard API URL
     try:
         limit = int(data_dict.get("limit", 100))
     except (ValueError, TypeError):
         limit = 100
 
-    start_ts = data_dict.get("start_ts")
-    end_ts = data_dict.get("end_ts")
-
-    if start_ts and end_ts:
-        api_path = (
-            f"/api/plugins/telemetry/DEVICE/{entity_id}/values/timeseries"
-            f"?keys={keys}&startTs={start_ts}&endTs={end_ts}&limit={limit}"
-        )
-    else:
-        api_path = (
-            f"/api/plugins/telemetry/DEVICE/{entity_id}/values/timeseries"
-            f"?keys={keys}"
-        )
-
-    url = tb_url.rstrip("/") + api_path
-
-    req = urllib.request.Request(url)
-    req.add_header("X-Authorization", f"ApiKey {tb_api_key}")
-    req.add_header("Content-Type", "application/json")
-
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            telemetry_raw = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace") if e.fp else ""
-        log.error("ThingsBoard API error %s: %s", e.code, body)
-        raise toolkit.ValidationError(
-            {"thingsboard": [f"ThingsBoard API returned HTTP {e.code}"]}
-        )
-    except urllib.error.URLError as e:
-        log.error("ThingsBoard connection error: %s", e.reason)
-        raise toolkit.ValidationError(
-            {"thingsboard": [f"Cannot connect to ThingsBoard: {e.reason}"]}
-        )
+    telemetry_raw = _fetch_telemetry(
+        tb_url, tb_api_key, entity_id, keys,
+        start_ts=data_dict.get("start_ts"),
+        end_ts=data_dict.get("end_ts"),
+        limit=limit,
+    )
 
     return {
         "station_id": station.station_id,
@@ -409,4 +512,178 @@ def station_telemetry(context, data_dict):
         "thingsboard_entity_id": entity_id,
         "telemetry_key": keys,
         "telemetry": telemetry_raw,
+    }
+
+
+def station_discharge(context, data_dict):
+    """Fetch telemetry and compute discharge using the station rating curve.
+
+    :param id: Station UUID or name/slug (required)
+    :param keys: Telemetry key for water level (optional, defaults to station config)
+    :param start_ts: Start timestamp in ms (optional)
+    :param end_ts: End timestamp in ms (optional)
+    :param limit: Max data points (default 100)
+    :returns: Dict with raw telemetry, computed discharge, and curve info
+    """
+    station = _resolve_station(data_dict)
+    _check_station_access(context, station)
+
+    tb_url, tb_api_key = _get_tb_config()
+    if not tb_api_key:
+        raise toolkit.ValidationError(
+            {"thingsboard": ["ThingsBoard API key not configured (TB_API_KEY env var)"]}
+        )
+
+    entity_id = station.thingsboard_entity_id
+    if not entity_id:
+        raise toolkit.ValidationError(
+            {"thingsboard_entity_id": ["Station has no ThingsBoard entity configured"]}
+        )
+
+    keys = data_dict.get("keys") or station.thingsboard_telemetry_key or "fDistance"
+
+    try:
+        limit = int(data_dict.get("limit", 100))
+    except (ValueError, TypeError):
+        limit = 100
+
+    telemetry_raw = _fetch_telemetry(
+        tb_url, tb_api_key, entity_id, keys,
+        start_ts=data_dict.get("start_ts"),
+        end_ts=data_dict.get("end_ts"),
+        limit=limit,
+    )
+
+    # Parse curve params
+    curve_type = station.curve_type
+    curve_params = None
+    if station.curve_params_json:
+        try:
+            curve_params = json.loads(station.curve_params_json) if isinstance(
+                station.curve_params_json, str) else station.curve_params_json
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # Apply rating curve to each telemetry point
+    discharge_series = {}
+    for tel_key, points in telemetry_raw.items():
+        discharge_points = []
+        for point in points:
+            h_val = point.get("value")
+            ts = point.get("ts")
+            q = _compute_discharge(h_val, curve_type, curve_params)
+            discharge_points.append({
+                "ts": ts,
+                "h": float(h_val) if h_val is not None else None,
+                "q": q,
+            })
+        discharge_series[tel_key] = discharge_points
+
+    return {
+        "station_id": station.station_id,
+        "station_name": station.name,
+        "title": station.title,
+        "unit_level": station.unit_level or "m",
+        "unit_flow": station.unit_flow or "m3/s",
+        "curve_type": curve_type,
+        "curve_params": curve_params,
+        "thingsboard_entity_id": entity_id,
+        "telemetry_key": keys,
+        "telemetry": telemetry_raw,
+        "discharge": discharge_series,
+    }
+
+
+def station_geojson(context, data_dict):
+    """Return all approved stations as a GeoJSON FeatureCollection.
+
+    :param org_id: Filter by organization (optional)
+    :param station_status: Filter by station status (optional)
+    :param q: Search query (optional)
+    :param include_telemetry: If "true", include latest telemetry value (optional)
+    :returns: GeoJSON FeatureCollection dict
+    """
+    toolkit.check_access("station_geojson", context, data_dict)
+
+    results, _total = station_db.HydroStation.list_stations(
+        org_id=data_dict.get("org_id"),
+        station_status=data_dict.get("station_status"),
+        submission_status="approved",
+        q=data_dict.get("q"),
+        limit=10000,
+        offset=0,
+    )
+
+    include_telemetry = str(data_dict.get("include_telemetry", "")).lower() == "true"
+    tb_url, tb_api_key = None, None
+    if include_telemetry:
+        tb_url, tb_api_key = _get_tb_config()
+
+    features = []
+    for station in results:
+        lat = station.latitude
+        lon = station.longitude
+        if lat is None or lon is None:
+            continue
+
+        props = {
+            "id": station.id,
+            "title": station.title,
+            "name": station.name,
+            "station_id": station.station_id,
+            "station_status": station.station_status,
+            "river_name": station.river_name,
+            "basin_name": station.basin_name,
+            "country": station.country,
+            "elevation_masl": station.elevation_masl,
+            "observed_variable": station.observed_variable,
+            "unit_level": station.unit_level,
+            "unit_flow": station.unit_flow,
+            "curve_type": station.curve_type,
+        }
+
+        # Optionally fetch latest telemetry value
+        if include_telemetry and tb_api_key and station.thingsboard_entity_id:
+            tel_key = station.thingsboard_telemetry_key or "fDistance"
+            try:
+                tel = _fetch_telemetry(
+                    tb_url, tb_api_key,
+                    station.thingsboard_entity_id,
+                    tel_key, limit=1,
+                )
+                for k, v in tel.items():
+                    if v:
+                        props["latest_value"] = float(v[0].get("value", 0))
+                        props["latest_ts"] = v[0].get("ts")
+                        props["telemetry_key"] = k
+
+                        # Compute discharge for latest value
+                        if station.curve_params_json and station.curve_type:
+                            try:
+                                cp = json.loads(station.curve_params_json)
+                                q = _compute_discharge(
+                                    props["latest_value"],
+                                    station.curve_type, cp)
+                                if q is not None:
+                                    props["latest_discharge"] = q
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+                        break
+            except Exception as e:
+                log.debug("GeoJSON: skipping telemetry for %s: %s",
+                          station.name, e)
+
+        feature = {
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [float(lon), float(lat)],
+            },
+            "properties": props,
+        }
+        features.append(feature)
+
+    return {
+        "type": "FeatureCollection",
+        "features": features,
     }
