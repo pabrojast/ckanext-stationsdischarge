@@ -128,3 +128,9 @@ def station_delete(context, data_dict):
 def station_list(context, data_dict):
     """Anyone can list stations (privacy is filtered in the action)."""
     return {"success": True}
+
+
+@toolkit.auth_allow_anonymous_access
+def station_telemetry(context, data_dict):
+    """Same access rules as station_show — delegates to it."""
+    return station_show(context, data_dict)

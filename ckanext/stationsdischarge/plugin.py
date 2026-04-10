@@ -61,6 +61,7 @@ class StationsDischargePlugin(plugins.SingletonPlugin):
             "station_update": actions.station_update,
             "station_delete": actions.station_delete,
             "station_list": actions.station_list,
+            "station_telemetry": actions.station_telemetry,
         }
 
     # ── IAuthFunctions ──────────────────────────────
@@ -73,6 +74,7 @@ class StationsDischargePlugin(plugins.SingletonPlugin):
             "station_update": auth.station_update,
             "station_delete": auth.station_delete,
             "station_list": auth.station_list,
+            "station_telemetry": auth.station_telemetry,
         }
 
     # ── ITemplateHelpers ────────────────────────────

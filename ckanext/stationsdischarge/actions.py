@@ -307,3 +307,106 @@ def station_list(context, data_dict):
         "results": station_dicts,
         "count": len(station_dicts),
     }
+
+
+def station_telemetry(context, data_dict):
+    """Fetch latest telemetry data from ThingsBoard for a station.
+
+    :param id: Station UUID or name/slug (required)
+    :param keys: Comma-separated telemetry keys (optional, defaults to station's configured key)
+    :param start_ts: Start timestamp in ms (optional, for historical data)
+    :param end_ts: End timestamp in ms (optional, for historical data)
+    :param limit: Max data points (default 100)
+    :returns: Dict with station info and telemetry data
+    """
+    import os
+    import time
+    import urllib.request
+    import urllib.error
+
+    station_ref = data_dict.get("id") or data_dict.get("name")
+    if not station_ref:
+        raise toolkit.ValidationError({"id": ["Missing value"]})
+
+    station = (station_db.HydroStation.get(id=station_ref)
+               or station_db.HydroStation.get(name=station_ref)
+               or station_db.HydroStation.get(station_id=station_ref))
+
+    if not station:
+        raise toolkit.ObjectNotFound(f"Station not found: {station_ref}")
+
+    toolkit.check_access("station_show", context,
+                         {"id": station.id, "submission_status": station.submission_status,
+                          "user_id": station.user_id, "owner_org": station.owner_org})
+
+    # ThingsBoard config
+    tb_url = os.environ.get(
+        "CKANEXT__STATIONSDISCHARGE__TB_URL",
+        os.environ.get("TB_URL", "https://tb.ihp-wins.unesco.org"),
+    )
+    tb_api_key = os.environ.get(
+        "CKANEXT__STATIONSDISCHARGE__TB_API_KEY",
+        os.environ.get("TB_API_KEY", ""),
+    )
+
+    if not tb_api_key:
+        raise toolkit.ValidationError(
+            {"thingsboard": ["ThingsBoard API key not configured (TB_API_KEY env var)"]}
+        )
+
+    entity_id = station.thingsboard_entity_id
+    if not entity_id:
+        raise toolkit.ValidationError(
+            {"thingsboard_entity_id": ["Station has no ThingsBoard entity configured"]}
+        )
+
+    keys = data_dict.get("keys") or station.thingsboard_telemetry_key or "fDistance"
+
+    # Build ThingsBoard API URL
+    try:
+        limit = int(data_dict.get("limit", 100))
+    except (ValueError, TypeError):
+        limit = 100
+
+    start_ts = data_dict.get("start_ts")
+    end_ts = data_dict.get("end_ts")
+
+    if start_ts and end_ts:
+        api_path = (
+            f"/api/plugins/telemetry/DEVICE/{entity_id}/values/timeseries"
+            f"?keys={keys}&startTs={start_ts}&endTs={end_ts}&limit={limit}"
+        )
+    else:
+        api_path = (
+            f"/api/plugins/telemetry/DEVICE/{entity_id}/values/timeseries"
+            f"?keys={keys}"
+        )
+
+    url = tb_url.rstrip("/") + api_path
+
+    req = urllib.request.Request(url)
+    req.add_header("X-Authorization", f"ApiKey {tb_api_key}")
+    req.add_header("Content-Type", "application/json")
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            telemetry_raw = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace") if e.fp else ""
+        log.error("ThingsBoard API error %s: %s", e.code, body)
+        raise toolkit.ValidationError(
+            {"thingsboard": [f"ThingsBoard API returned HTTP {e.code}"]}
+        )
+    except urllib.error.URLError as e:
+        log.error("ThingsBoard connection error: %s", e.reason)
+        raise toolkit.ValidationError(
+            {"thingsboard": [f"Cannot connect to ThingsBoard: {e.reason}"]}
+        )
+
+    return {
+        "station_id": station.station_id,
+        "station_name": station.name,
+        "thingsboard_entity_id": entity_id,
+        "telemetry_key": keys,
+        "telemetry": telemetry_raw,
+    }
