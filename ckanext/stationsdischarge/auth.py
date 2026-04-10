@@ -146,3 +146,9 @@ def station_discharge(context, data_dict):
 def station_geojson(context, data_dict):
     """Anyone can access the GeoJSON endpoint (only approved stations returned)."""
     return {"success": True}
+
+
+@toolkit.auth_allow_anonymous_access
+def station_discharge_csv(context, data_dict):
+    """Same access rules as station_show."""
+    return station_show(context, data_dict)

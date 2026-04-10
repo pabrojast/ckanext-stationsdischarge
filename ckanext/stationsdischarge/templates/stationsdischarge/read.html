@@ -19,6 +19,11 @@
 
     {# Action buttons #}
     <div class="btn-group">
+      {% if station.thingsboard_entity_id %}
+        <a href="{{ h.url_for('hydro_stations.dashboard', name=station.name) }}" class="btn btn-info">
+          <i class="fa fa-tachometer"></i> {{ _('Dashboard') }}
+        </a>
+      {% endif %}
       {% if h.check_access('station_update', {'id': station.id}) %}
         <a href="{{ h.url_for('hydro_stations.edit', name=station.name) }}" class="btn btn-primary">
           <i class="fa fa-pencil"></i> {{ _('Edit') }}
@@ -30,6 +35,21 @@
         </a>
       {% endif %}
     </div>
+
+    {# Export links #}
+    {% if station.thingsboard_entity_id %}
+    <div style="margin-top: 10px;">
+      <a href="{{ h.url_for('hydro_stations.discharge_csv', name=station.name) }}" class="btn btn-default btn-sm" title="{{ _('Download CSV') }}">
+        <i class="fa fa-download"></i> CSV
+      </a>
+      <a href="{{ h.url_for('hydro_stations.discharge', name=station.name) }}" class="btn btn-default btn-sm" target="_blank" title="{{ _('JSON API') }}">
+        <i class="fa fa-code"></i> JSON
+      </a>
+      <a href="{{ h.url_for('hydro_stations.geojson') }}?include_telemetry=true" class="btn btn-default btn-sm" target="_blank" title="{{ _('GeoJSON') }}">
+        <i class="fa fa-globe"></i> GeoJSON
+      </a>
+    </div>
+    {% endif %}
   </div>
 
   {# ── Station Identification ── #}

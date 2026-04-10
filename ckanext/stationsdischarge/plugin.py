@@ -64,6 +64,7 @@ class StationsDischargePlugin(plugins.SingletonPlugin):
             "station_telemetry": actions.station_telemetry,
             "station_discharge": actions.station_discharge,
             "station_geojson": actions.station_geojson,
+            "station_discharge_csv": actions.station_discharge_csv,
         }
 
     # ── IAuthFunctions ──────────────────────────────
@@ -79,6 +80,7 @@ class StationsDischargePlugin(plugins.SingletonPlugin):
             "station_telemetry": auth.station_telemetry,
             "station_discharge": auth.station_discharge,
             "station_geojson": auth.station_geojson,
+            "station_discharge_csv": auth.station_discharge_csv,
         }
 
     # ── ITemplateHelpers ────────────────────────────

@@ -133,6 +133,9 @@ def geojson():
         "station_status": toolkit.request.args.get("station_status", ""),
         "q": toolkit.request.args.get("q", ""),
         "include_telemetry": toolkit.request.args.get("include_telemetry", ""),
+        "start_ts": toolkit.request.args.get("start_ts", ""),
+        "end_ts": toolkit.request.args.get("end_ts", ""),
+        "limit": toolkit.request.args.get("limit", ""),
     }
 
     try:
@@ -375,6 +378,94 @@ def telemetry(name):
         mimetype="application/json",
         headers={"Access-Control-Allow-Origin": "*"},
     )
+
+
+# ── CSV EXPORT ───────────────────────────────────────
+
+@hydro_stations.route("/<name>/discharge.csv", methods=["GET"])
+def discharge_csv(name):
+    """Return discharge data as CSV download.
+
+    Query params: keys, start_ts, end_ts, limit
+    """
+    context = _get_context()
+    data_dict = {
+        "id": name,
+        "keys": toolkit.request.args.get("keys", ""),
+        "start_ts": toolkit.request.args.get("start_ts", ""),
+        "end_ts": toolkit.request.args.get("end_ts", ""),
+        "limit": toolkit.request.args.get("limit", "1000"),
+    }
+
+    try:
+        result = toolkit.get_action("station_discharge_csv")(context, data_dict)
+    except toolkit.ObjectNotFound:
+        return Response("Station not found", status=404, mimetype="text/plain")
+    except toolkit.NotAuthorized:
+        return Response("Not authorized", status=403, mimetype="text/plain")
+    except toolkit.ValidationError as e:
+        return Response(
+            json.dumps({"error": e.error_dict}),
+            status=400, mimetype="application/json",
+        )
+    except Exception as e:
+        log.error("Error generating CSV for %s: %s", name, e)
+        return Response("Internal error", status=500, mimetype="text/plain")
+
+    import io
+    import csv
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(result["header"])
+    for row in result["rows"]:
+        writer.writerow(row)
+
+    csv_content = output.getvalue()
+    filename = "%s_discharge.csv" % result.get("station_name", name)
+
+    return Response(
+        csv_content,
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": "attachment; filename=%s" % filename,
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
+# ── DASHBOARD ────────────────────────────────────────
+
+@hydro_stations.route("/<name>/dashboard", methods=["GET"])
+def dashboard(name):
+    """Interactive dashboard with chart and data table for a station."""
+    context = _get_context()
+
+    try:
+        station = toolkit.get_action("station_show")(context, {"id": name})
+    except toolkit.ObjectNotFound:
+        toolkit.abort(404, "Station not found")
+    except toolkit.NotAuthorized:
+        toolkit.abort(403, "Not authorized to view this station")
+
+    org = None
+    if station.get("owner_org"):
+        try:
+            org = toolkit.get_action("organization_show")(
+                context, {"id": station["owner_org"]}
+            )
+        except Exception:
+            pass
+
+    extra_vars = {
+        "station": station,
+        "org": org,
+        "discharge_url": toolkit.url_for(
+            "hydro_stations.discharge", name=station["name"]),
+        "csv_url": toolkit.url_for(
+            "hydro_stations.discharge_csv", name=station["name"]),
+        "geojson_url": toolkit.url_for("hydro_stations.geojson"),
+    }
+    return toolkit.render("stationsdischarge/dashboard.html", extra_vars=extra_vars)
 
 
 # ── HELPERS ──────────────────────────────────────────

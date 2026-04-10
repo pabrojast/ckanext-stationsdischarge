@@ -601,6 +601,9 @@ def station_geojson(context, data_dict):
     :param station_status: Filter by station status (optional)
     :param q: Search query (optional)
     :param include_telemetry: If "true", include latest telemetry value (optional)
+    :param start_ts: Start timestamp in ms — when given with include_telemetry, fetch series (optional)
+    :param end_ts: End timestamp in ms (optional)
+    :param limit: Max telemetry points per station (default 1 without time range, 100 with)
     :returns: GeoJSON FeatureCollection dict
     """
     toolkit.check_access("station_geojson", context, data_dict)
@@ -616,6 +619,15 @@ def station_geojson(context, data_dict):
 
     include_telemetry = str(data_dict.get("include_telemetry", "")).lower() == "true"
     tb_url, tb_api_key = None, None
+    start_ts = data_dict.get("start_ts") or None
+    end_ts = data_dict.get("end_ts") or None
+    has_time_range = bool(start_ts and end_ts)
+
+    try:
+        tel_limit = int(data_dict.get("limit", 100 if has_time_range else 1))
+    except (ValueError, TypeError):
+        tel_limit = 1
+
     if include_telemetry:
         tb_url, tb_api_key = _get_tb_config()
 
@@ -642,32 +654,56 @@ def station_geojson(context, data_dict):
             "curve_type": station.curve_type,
         }
 
-        # Optionally fetch latest telemetry value
+        # Parse curve for discharge computation
+        curve_params = None
+        if station.curve_params_json and station.curve_type:
+            try:
+                curve_params = json.loads(station.curve_params_json)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
         if include_telemetry and tb_api_key and station.thingsboard_entity_id:
             tel_key = station.thingsboard_telemetry_key or "fDistance"
             try:
                 tel = _fetch_telemetry(
                     tb_url, tb_api_key,
                     station.thingsboard_entity_id,
-                    tel_key, limit=1,
+                    tel_key,
+                    start_ts=start_ts if has_time_range else None,
+                    end_ts=end_ts if has_time_range else None,
+                    limit=tel_limit,
                 )
                 for k, v in tel.items():
                     if v:
+                        # Always include latest value
                         props["latest_value"] = float(v[0].get("value", 0))
                         props["latest_ts"] = v[0].get("ts")
                         props["telemetry_key"] = k
 
                         # Compute discharge for latest value
-                        if station.curve_params_json and station.curve_type:
-                            try:
-                                cp = json.loads(station.curve_params_json)
-                                q = _compute_discharge(
-                                    props["latest_value"],
-                                    station.curve_type, cp)
-                                if q is not None:
-                                    props["latest_discharge"] = q
-                            except (json.JSONDecodeError, TypeError):
-                                pass
+                        if curve_params:
+                            q = _compute_discharge(
+                                props["latest_value"],
+                                station.curve_type, curve_params)
+                            if q is not None:
+                                props["latest_discharge"] = q
+
+                        # Include full series when time range given
+                        if has_time_range and len(v) > 1:
+                            series = []
+                            for pt in v:
+                                h_val = float(pt.get("value", 0))
+                                entry = {
+                                    "ts": pt.get("ts"),
+                                    "h": h_val,
+                                }
+                                if curve_params:
+                                    q = _compute_discharge(
+                                        h_val, station.curve_type, curve_params)
+                                    if q is not None:
+                                        entry["q"] = q
+                                series.append(entry)
+                            props["telemetry_series"] = series
                         break
             except Exception as e:
                 log.debug("GeoJSON: skipping telemetry for %s: %s",
@@ -686,4 +722,51 @@ def station_geojson(context, data_dict):
     return {
         "type": "FeatureCollection",
         "features": features,
+    }
+
+
+def station_discharge_csv(context, data_dict):
+    """Return discharge data formatted for CSV output.
+
+    Same params as station_discharge. Returns a dict with 'header' and 'rows'.
+    """
+    station = _resolve_station(data_dict)
+    _check_station_access(context, station)
+
+    # Re-use station_discharge logic
+    discharge_data = station_discharge(context, data_dict)
+
+    unit_level = discharge_data.get("unit_level", "m")
+    unit_flow = discharge_data.get("unit_flow", "m3/s")
+
+    header = ["timestamp_ms", "datetime_utc",
+              "water_level_%s" % unit_level,
+              "discharge_%s" % unit_flow]
+    rows = []
+
+    for _tel_key, points in discharge_data.get("discharge", {}).items():
+        for pt in points:
+            ts = pt.get("ts")
+            h = pt.get("h")
+            q = pt.get("q")
+            dt_str = ""
+            if ts:
+                try:
+                    dt = datetime.datetime.utcfromtimestamp(int(ts) / 1000.0)
+                    dt_str = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+                except (ValueError, TypeError, OSError):
+                    pass
+            rows.append([
+                str(ts or ""),
+                dt_str,
+                str(h) if h is not None else "",
+                str(q) if q is not None else "",
+            ])
+
+    return {
+        "station_name": station.name,
+        "station_id": station.station_id,
+        "title": station.title,
+        "header": header,
+        "rows": rows,
     }
