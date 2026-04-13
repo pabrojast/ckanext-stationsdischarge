@@ -282,7 +282,8 @@
             {% set curve_choices = [
               ('power', _('Power law Q = a·(H − h₀)ᵇ')),
               ('linear_segments', _('Linear segments')),
-              ('table_interpolation', _('Table interpolation (H–Q table)'))
+              ('table_interpolation', _('Table interpolation (H–Q table)')),
+              ('piecewise_power', _('Piecewise power law'))
             ] %}
             {% for value, label in curve_choices %}
               <option value="{{ value }}"
@@ -303,13 +304,16 @@
                     rows="8" style="font-family: monospace; font-size: 13px;"
                     placeholder='Power:      {"a": 2.5, "b": 1.8, "h0": 0.15}
 Segments:   {"segments": [{"h_min":0,"h_max":1,"slope":2.5,"intercept":0}]}
-Table:      {"table": [{"h":0,"q":0}, {"h":0.5,"q":1.2}]}'>{{ data.curve_params_json or '' }}</textarea>
+Table:      {"table": [{"h":0,"q":0}, {"h":0.5,"q":1.2}]}
+Piecewise:  {"segments": [{"h_max":1.8,"a":38.91,"b":1.93}, {"a":30.53,"b":2.34}]}'>{{ data.curve_params_json or '' }}</textarea>
         </div>
         <p class="help-text">
           {{ _('JSON object matching the selected curve type:') }}<br>
           <strong>Power:</strong> <code>{"a": 2.5, "b": 1.8, "h0": 0.15}</code><br>
           <strong>Linear segments:</strong> <code>{"segments": [{"h_min": 0, "h_max": 1, "slope": 2.5, "intercept": 0}]}</code><br>
-          <strong>Table interpolation:</strong> <code>{"table": [{"h": 0, "q": 0}, {"h": 0.5, "q": 1.2}]}</code>
+          <strong>Table interpolation:</strong> <code>{"table": [{"h": 0, "q": 0}, {"h": 0.5, "q": 1.2}]}</code><br>
+          <strong>Piecewise power:</strong> <code>{"segments": [{"h_max": 1.8, "a": 38.91, "b": 1.93}, {"a": 30.53, "b": 2.34}]}</code><br>
+          <span class="text-muted">{{ _('Optional transform: add "transform_offset" and "transform_divisor" for H = offset − raw/divisor') }}</span>
         </p>
         {% if errors.curve_params_json %}<span class="error-block">{{ errors.curve_params_json | join(', ') }}</span>{% endif %}
       </div>

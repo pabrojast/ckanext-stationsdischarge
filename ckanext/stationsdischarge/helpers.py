@@ -39,6 +39,7 @@ CURVE_TYPE_LABELS = {
     "power": "Power law Q = a·(H − h₀)ᵇ",
     "linear_segments": "Linear segments",
     "table_interpolation": "Table interpolation (H–Q)",
+    "piecewise_power": "Piecewise power law",
 }
 
 SUBMISSION_STATUS_LABELS = {
@@ -89,6 +90,24 @@ def stationsdischarge_format_curve_summary(curve_type, json_str):
     if curve_type == "table_interpolation":
         table = params.get("table", [])
         return f"{len(table)}-point H–Q table"
+
+    if curve_type == "piecewise_power":
+        segs = params.get("segments", [])
+        transform = ""
+        if "transform_offset" in params or "transform_divisor" in params:
+            off = params.get("transform_offset", 0)
+            div = params.get("transform_divisor", 1)
+            transform = f"H = {off} − raw/{div}, "
+        parts = []
+        for seg in segs:
+            a = seg.get("a", "?")
+            b = seg.get("b", "?")
+            h_max = seg.get("h_max")
+            if h_max is not None:
+                parts.append(f"H≤{h_max}: Q={a}·H^{b}")
+            else:
+                parts.append(f"Q={a}·H^{b}")
+        return transform + "; ".join(parts)
 
     return curve_type
 

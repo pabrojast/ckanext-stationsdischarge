@@ -211,6 +211,44 @@ Authorization: YOUR_API_KEY
 
 ---
 
+## 5b. Curve types reference
+
+| `curve_type` | `curve_params_json` format | Description |
+|---|---|---|
+| `power` | `{"a": 2.5, "b": 1.8, "h0": 0.15}` | Q = a·(H − h₀)ᵇ |
+| `linear_segments` | `{"segments": [{"h_min":0, "h_max":1.5, "slope":15, "intercept":0}, ...]}` | Piecewise linear |
+| `table_interpolation` | `{"table": [{"h":0, "q":0}, {"h":0.5, "q":1.2}, ...]}` | H–Q lookup table (≥2 rows) |
+| `piecewise_power` | `{"segments": [{"h_max":1.8, "a":38.91, "b":1.93}, {"a":30.53, "b":2.34}]}` | Multiple Q = a·Hᵇ segments |
+
+### Piecewise power details
+
+Each segment has `a` (coefficient), `b` (exponent), and optional `h_max` (upper bound).
+The last segment acts as the catch-all for values above all `h_max` thresholds.
+
+**Optional raw-value transform**: add `"transform_offset"` and `"transform_divisor"` at the
+top level to convert raw sensor values before applying the power law:
+
+```
+H = transform_offset − raw_value / transform_divisor
+```
+
+Example: sensor reads 570 (cm), offset 7.5, divisor 100 → H = 7.5 − 570/100 = 1.80 m
+
+```json
+{
+  "transform_offset": 7.5,
+  "transform_divisor": 100,
+  "segments": [
+    {"h_max": 1.8, "a": 38.9106, "b": 1.9312},
+    {"a": 30.5312, "b": 2.3428}
+  ]
+}
+```
+
+If `H ≤ 0` after the transform, discharge is 0.
+
+---
+
 ## 6. Web UI Endpoints
 
 | URL                            | Description              |

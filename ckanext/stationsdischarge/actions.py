@@ -385,6 +385,8 @@ def _compute_discharge(h, curve_type, curve_params):
     - **power**: Q = a * (h - h0)^b
     - **linear_segments**: piecewise Q = slope*h + intercept
     - **table_interpolation**: linear interpolation on an H-Q table
+    - **piecewise_power**: multiple Q = a*H^b segments with optional
+      raw-value transform (H = offset - raw/divisor)
 
     Returns Q (float) or None if computation is not possible.
     """
@@ -448,6 +450,41 @@ def _compute_discharge(h, curve_type, curve_params):
                 frac = (h - h1) / (h2 - h1)
                 return round(q1 + frac * (q2 - q1), 4)
         return None
+
+    if curve_type == "piecewise_power":
+        # Optional transformation: H = offset - raw / divisor
+        if "transform_offset" in curve_params or "transform_divisor" in curve_params:
+            offset = float(curve_params.get("transform_offset", 0))
+            divisor = float(curve_params.get("transform_divisor", 1))
+            if divisor == 0:
+                return None
+            h = offset - h / divisor
+
+        if h <= 0:
+            return 0.0
+
+        segments = curve_params.get("segments", [])
+        if not segments:
+            return None
+
+        # Find matching segment (first where h <= h_max, or last as catch-all)
+        for seg in segments:
+            h_max = seg.get("h_max")
+            if h_max is not None and h <= float(h_max):
+                a = float(seg.get("a", 0))
+                b = float(seg.get("b", 1))
+                try:
+                    return round(a * math.pow(h, b), 4)
+                except (OverflowError, ValueError):
+                    return None
+        # No h_max matched — use last segment as catch-all
+        seg = segments[-1]
+        a = float(seg.get("a", 0))
+        b = float(seg.get("b", 1))
+        try:
+            return round(a * math.pow(h, b), 4)
+        except (OverflowError, ValueError):
+            return None
 
     return None
 

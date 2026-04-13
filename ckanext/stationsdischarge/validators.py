@@ -56,7 +56,7 @@ def valid_uuid(value):
 
 # ── Rating-curve parameters ─────────────────────────
 
-_VALID_CURVE_TYPES = {"power", "linear_segments", "table_interpolation"}
+_VALID_CURVE_TYPES = {"power", "linear_segments", "table_interpolation", "piecewise_power"}
 
 
 def valid_curve_params_json(key, data, errors, context):
@@ -135,6 +135,50 @@ def valid_curve_params_json(key, data, errors, context):
                     f'Row {i} must have "h" and "q" keys.'
                 )
                 return
+
+    elif curve_type == "piecewise_power":
+        # Optional transform fields
+        for tf in ("transform_offset", "transform_divisor"):
+            if tf in params:
+                try:
+                    float(params[tf])
+                except (ValueError, TypeError):
+                    errors[key].append(f'"{tf}" must be a number.')
+                    return
+        if "transform_divisor" in params and float(params["transform_divisor"]) == 0:
+            errors[key].append('"transform_divisor" must not be zero.')
+            return
+
+        segments = params.get("segments")
+        if not isinstance(segments, list) or len(segments) == 0:
+            errors[key].append(
+                'Piecewise power requires "segments" as a non-empty list '
+                '(e.g. [{"h_max": 1.8, "a": 38.91, "b": 1.93}, '
+                '{"a": 30.53, "b": 2.34}]).'
+            )
+            return
+        for i, seg in enumerate(segments):
+            for field in ("a", "b"):
+                if field not in seg:
+                    errors[key].append(
+                        f'Segment {i} is missing "{field}".'
+                    )
+                    return
+                try:
+                    float(seg[field])
+                except (ValueError, TypeError):
+                    errors[key].append(
+                        f'Segment {i}: "{field}" must be a number.'
+                    )
+                    return
+            if "h_max" in seg and seg["h_max"] is not None:
+                try:
+                    float(seg["h_max"])
+                except (ValueError, TypeError):
+                    errors[key].append(
+                        f'Segment {i}: "h_max" must be a number or null.'
+                    )
+                    return
 
     # Re-serialize to ensure consistent storage
     data[key] = json.dumps(params, ensure_ascii=False)
