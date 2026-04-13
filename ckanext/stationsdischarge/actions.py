@@ -378,6 +378,71 @@ def _check_station_access(context, station):
 
 # ── Rating curve calculation ─────────────────────────
 
+# Time-range presets with smart aggregation defaults.
+# For ranges > 7 days ThingsBoard agg reduces data volume significantly.
+_TIME_RANGE_PRESETS = {
+    "1h":  {"hours": 1,     "limit": 500,  "agg": None,  "interval": None},
+    "6h":  {"hours": 6,     "limit": 1000, "agg": None,  "interval": None},
+    "24h": {"hours": 24,    "limit": 2000, "agg": None,  "interval": None},
+    "7d":  {"hours": 168,   "limit": 5000, "agg": None,  "interval": None},
+    "30d": {"hours": 720,   "limit": 744,  "agg": "AVG", "interval": 3600000},     # hourly avg
+    "90d": {"hours": 2160,  "limit": 720,  "agg": "AVG", "interval": 10800000},    # 3-hour avg
+    "6m":  {"hours": 4380,  "limit": 180,  "agg": "AVG", "interval": 86400000},    # daily avg
+    "1y":  {"hours": 8760,  "limit": 366,  "agg": "AVG", "interval": 86400000},    # daily avg
+}
+
+
+def _resolve_time_range(data_dict):
+    """Resolve time_range shortcut into start_ts, end_ts, limit, agg, interval.
+
+    If ``time_range`` is present (e.g. "30d"), it overrides start_ts/end_ts and
+    sets appropriate aggregation defaults.  Explicit agg/interval still wins.
+
+    Returns a dict with keys: start_ts, end_ts, limit, agg, interval.
+    """
+    time_range = str(data_dict.get("time_range", "")).strip().lower()
+    preset = _TIME_RANGE_PRESETS.get(time_range) if time_range else None
+
+    now_ms = int(time.time() * 1000)
+
+    if preset:
+        start_ts = str(now_ms - preset["hours"] * 3600 * 1000)
+        end_ts = str(now_ms)
+        default_limit = preset["limit"]
+        default_agg = preset["agg"]
+        default_interval = preset["interval"]
+    else:
+        start_ts = data_dict.get("start_ts") or None
+        end_ts = data_dict.get("end_ts") or None
+        default_limit = 100
+        default_agg = None
+        default_interval = None
+
+    try:
+        limit = int(data_dict.get("limit") or default_limit)
+    except (ValueError, TypeError):
+        limit = default_limit
+
+    agg = data_dict.get("agg") or default_agg
+    if agg and agg.upper() not in ("AVG", "MIN", "MAX", "SUM", "COUNT", "NONE"):
+        agg = None
+
+    interval = data_dict.get("interval") or default_interval
+    if interval:
+        try:
+            interval = int(interval)
+        except (ValueError, TypeError):
+            interval = default_interval
+
+    return {
+        "start_ts": start_ts,
+        "end_ts": end_ts,
+        "limit": limit,
+        "agg": agg.upper() if agg else None,
+        "interval": interval,
+        "time_range": time_range or None,
+    }
+
 def _compute_discharge(h, curve_type, curve_params):
     """Apply the rating curve to convert water level *h* to discharge *Q*.
 
@@ -490,8 +555,13 @@ def _compute_discharge(h, curve_type, curve_params):
 
 
 def _fetch_telemetry(tb_url, tb_api_key, entity_id, keys, start_ts=None,
-                     end_ts=None, limit=100):
-    """Fetch telemetry from ThingsBoard for a device."""
+                     end_ts=None, limit=100, agg=None, interval=None):
+    """Fetch telemetry from ThingsBoard for a device.
+
+    When *agg* and *interval* are provided, ThingsBoard returns aggregated
+    values (e.g. hourly/daily averages) which dramatically reduces payload
+    for long time ranges.
+    """
     safe_id = urllib.parse.quote(str(entity_id), safe="-")
     if "/" in entity_id or ".." in entity_id:
         raise toolkit.ValidationError({"thingsboard_entity_id": "Invalid entity ID"})
@@ -501,6 +571,8 @@ def _fetch_telemetry(tb_url, tb_api_key, entity_id, keys, start_ts=None,
             "?keys=%s&startTs=%s&endTs=%s&limit=%s"
             % (safe_id, keys, start_ts, end_ts, limit)
         )
+        if agg and interval:
+            api_path += "&agg=%s&interval=%s" % (agg, interval)
     else:
         api_path = (
             "/api/plugins/telemetry/DEVICE/%s/values/timeseries"
@@ -518,7 +590,10 @@ def station_telemetry(context, data_dict):
     :param keys: Comma-separated telemetry keys (optional, defaults to station's configured key)
     :param start_ts: Start timestamp in ms (optional, for historical data)
     :param end_ts: End timestamp in ms (optional, for historical data)
-    :param limit: Max data points (default 100)
+    :param time_range: Shortcut preset: 1h, 6h, 24h, 7d, 30d, 90d, 6m, 1y (optional, overrides start/end)
+    :param agg: ThingsBoard aggregation: AVG, MIN, MAX, SUM, COUNT (optional, auto-set for long ranges)
+    :param interval: Aggregation interval in ms (optional, auto-set for long ranges)
+    :param limit: Max data points (default depends on range)
     :returns: Dict with station info and telemetry data
     """
     station = _resolve_station(data_dict)
@@ -538,25 +613,31 @@ def station_telemetry(context, data_dict):
 
     keys = data_dict.get("keys") or station.thingsboard_telemetry_key or "fDistance"
 
-    try:
-        limit = int(data_dict.get("limit", 100))
-    except (ValueError, TypeError):
-        limit = 100
+    tr = _resolve_time_range(data_dict)
 
     telemetry_raw = _fetch_telemetry(
         tb_url, tb_api_key, entity_id, keys,
-        start_ts=data_dict.get("start_ts"),
-        end_ts=data_dict.get("end_ts"),
-        limit=limit,
+        start_ts=tr["start_ts"],
+        end_ts=tr["end_ts"],
+        limit=tr["limit"],
+        agg=tr["agg"],
+        interval=tr["interval"],
     )
 
-    return {
+    result = {
         "station_id": station.station_id,
         "station_name": station.name,
         "thingsboard_entity_id": entity_id,
         "telemetry_key": keys,
         "telemetry": telemetry_raw,
     }
+    if tr["agg"]:
+        result["aggregation"] = tr["agg"]
+        result["interval_ms"] = tr["interval"]
+    if tr["time_range"]:
+        result["time_range"] = tr["time_range"]
+
+    return result
 
 
 def station_discharge(context, data_dict):
@@ -566,7 +647,10 @@ def station_discharge(context, data_dict):
     :param keys: Telemetry key for water level (optional, defaults to station config)
     :param start_ts: Start timestamp in ms (optional)
     :param end_ts: End timestamp in ms (optional)
-    :param limit: Max data points (default 100)
+    :param time_range: Shortcut preset: 1h, 6h, 24h, 7d, 30d, 90d, 6m, 1y (optional, overrides start/end)
+    :param agg: ThingsBoard aggregation: AVG, MIN, MAX, SUM, COUNT (optional, auto-set for long ranges)
+    :param interval: Aggregation interval in ms (optional, auto-set for long ranges)
+    :param limit: Max data points (default depends on range)
     :returns: Dict with raw telemetry, computed discharge, and curve info
     """
     station = _resolve_station(data_dict)
@@ -586,16 +670,15 @@ def station_discharge(context, data_dict):
 
     keys = data_dict.get("keys") or station.thingsboard_telemetry_key or "fDistance"
 
-    try:
-        limit = int(data_dict.get("limit", 100))
-    except (ValueError, TypeError):
-        limit = 100
+    tr = _resolve_time_range(data_dict)
 
     telemetry_raw = _fetch_telemetry(
         tb_url, tb_api_key, entity_id, keys,
-        start_ts=data_dict.get("start_ts"),
-        end_ts=data_dict.get("end_ts"),
-        limit=limit,
+        start_ts=tr["start_ts"],
+        end_ts=tr["end_ts"],
+        limit=tr["limit"],
+        agg=tr["agg"],
+        interval=tr["interval"],
     )
 
     # Parse curve params
@@ -623,7 +706,7 @@ def station_discharge(context, data_dict):
             })
         discharge_series[tel_key] = discharge_points
 
-    return {
+    result = {
         "station_id": station.station_id,
         "station_name": station.name,
         "title": station.title,
@@ -636,6 +719,13 @@ def station_discharge(context, data_dict):
         "telemetry": telemetry_raw,
         "discharge": discharge_series,
     }
+    if tr["agg"]:
+        result["aggregation"] = tr["agg"]
+        result["interval_ms"] = tr["interval"]
+    if tr["time_range"]:
+        result["time_range"] = tr["time_range"]
+
+    return result
 
 
 def station_geojson(context, data_dict):

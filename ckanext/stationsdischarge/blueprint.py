@@ -291,7 +291,7 @@ def delete(name):
 def discharge(name):
     """Return telemetry data with rating curve discharge for a station.
 
-    Query params: keys, start_ts, end_ts, limit
+    Query params: keys, start_ts, end_ts, time_range, agg, interval, limit
     """
     context = _get_context()
     data_dict = {
@@ -299,7 +299,10 @@ def discharge(name):
         "keys": toolkit.request.args.get("keys", ""),
         "start_ts": toolkit.request.args.get("start_ts", ""),
         "end_ts": toolkit.request.args.get("end_ts", ""),
-        "limit": toolkit.request.args.get("limit", "100"),
+        "time_range": toolkit.request.args.get("time_range", ""),
+        "agg": toolkit.request.args.get("agg", ""),
+        "interval": toolkit.request.args.get("interval", ""),
+        "limit": toolkit.request.args.get("limit", ""),
     }
 
     try:
@@ -339,7 +342,7 @@ def discharge(name):
 def telemetry(name):
     """Return raw telemetry data from ThingsBoard for a station.
 
-    Query params: keys, start_ts, end_ts, limit
+    Query params: keys, start_ts, end_ts, time_range, agg, interval, limit
     """
     context = _get_context()
     data_dict = {
@@ -347,7 +350,10 @@ def telemetry(name):
         "keys": toolkit.request.args.get("keys", ""),
         "start_ts": toolkit.request.args.get("start_ts", ""),
         "end_ts": toolkit.request.args.get("end_ts", ""),
-        "limit": toolkit.request.args.get("limit", "100"),
+        "time_range": toolkit.request.args.get("time_range", ""),
+        "agg": toolkit.request.args.get("agg", ""),
+        "interval": toolkit.request.args.get("interval", ""),
+        "limit": toolkit.request.args.get("limit", ""),
     }
 
     try:
@@ -387,7 +393,7 @@ def telemetry(name):
 def discharge_csv(name):
     """Return discharge data as CSV download.
 
-    Query params: keys, start_ts, end_ts, limit
+    Query params: keys, start_ts, end_ts, time_range, agg, interval, limit
     """
     context = _get_context()
     data_dict = {
@@ -395,7 +401,10 @@ def discharge_csv(name):
         "keys": toolkit.request.args.get("keys", ""),
         "start_ts": toolkit.request.args.get("start_ts", ""),
         "end_ts": toolkit.request.args.get("end_ts", ""),
-        "limit": toolkit.request.args.get("limit", "1000"),
+        "time_range": toolkit.request.args.get("time_range", ""),
+        "agg": toolkit.request.args.get("agg", ""),
+        "interval": toolkit.request.args.get("interval", ""),
+        "limit": toolkit.request.args.get("limit", ""),
     }
 
     try:

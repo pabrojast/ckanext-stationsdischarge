@@ -82,6 +82,9 @@
         <button class="btn active" data-hours="24">24h</button>
         <button class="btn" data-hours="168">7d</button>
         <button class="btn" data-hours="720">30d</button>
+        <button class="btn" data-hours="2160">90d</button>
+        <button class="btn" data-hours="4380">6m</button>
+        <button class="btn" data-hours="8760">1y</button>
       </div>
     </div>
     <div class="control-group">
@@ -97,6 +100,9 @@
       <button class="btn btn-primary" id="btnApply" style="padding:5px 16px; font-size:13px;">
         <i class="fa fa-refresh"></i> {{ _('Apply') }}
       </button>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <span id="aggInfo" class="badge badge-info" style="display:none; font-size:11px; padding:4px 8px;"></span>
     </div>
     <div class="dashboard-actions">
       <a id="csvLink" href="{{ csv_url }}" class="btn btn-default" title="{{ _('Download CSV') }}">
@@ -204,6 +210,24 @@
     var CSV_URL = {{ csv_url | tojson }};
     var chart = null;
 
+    // ── Time range presets with aggregation config ──
+    var PRESETS = {
+      1:    { label: '1h',  limit: 500,  agg: null,  interval: null },
+      6:    { label: '6h',  limit: 1000, agg: null,  interval: null },
+      24:   { label: '24h', limit: 2000, agg: null,  interval: null },
+      168:  { label: '7d',  limit: 5000, agg: null,  interval: null },
+      720:  { label: '30d', limit: 744,  agg: 'AVG', interval: 3600000 },
+      2160: { label: '90d', limit: 720,  agg: 'AVG', interval: 10800000 },
+      4380: { label: '6m',  limit: 180,  agg: 'AVG', interval: 86400000 },
+      8760: { label: '1y',  limit: 366,  agg: 'AVG', interval: 86400000 },
+    };
+
+    var AGG_LABELS = {
+      3600000:   '{{ _("hourly avg") }}',
+      10800000:  '{{ _("3-hour avg") }}',
+      86400000:  '{{ _("daily avg") }}',
+    };
+
     // ── Time controls ──
     var activeHours = 24;
     var presetBtns = document.querySelectorAll('.time-presets .btn');
@@ -245,6 +269,7 @@
 
     document.getElementById('btnApply').addEventListener('click', function() {
       presetBtns.forEach(function(b) { b.classList.remove('active'); });
+      activeHours = 0;
       fetchData();
     });
 
@@ -256,10 +281,27 @@
 
       var startTs = new Date(startVal).getTime();
       var endTs = new Date(endVal).getTime();
-      var url = DISCHARGE_URL + '?start_ts=' + startTs + '&end_ts=' + endTs + '&limit=2000';
 
-      // Update CSV link
-      document.getElementById('csvLink').href = CSV_URL + '?start_ts=' + startTs + '&end_ts=' + endTs + '&limit=5000';
+      var preset = PRESETS[activeHours];
+      var limit = (preset && preset.limit) || 2000;
+      var url = DISCHARGE_URL + '?start_ts=' + startTs + '&end_ts=' + endTs + '&limit=' + limit;
+      var csvParams = '?start_ts=' + startTs + '&end_ts=' + endTs + '&limit=10000';
+
+      if (preset && preset.agg) {
+        url += '&agg=' + preset.agg + '&interval=' + preset.interval;
+        csvParams += '&agg=' + preset.agg + '&interval=' + preset.interval;
+      }
+
+      document.getElementById('csvLink').href = CSV_URL + csvParams;
+
+      // Show aggregation info
+      var aggInfo = document.getElementById('aggInfo');
+      if (preset && preset.agg && AGG_LABELS[preset.interval]) {
+        aggInfo.textContent = '⚡ {{ _("Showing") }} ' + AGG_LABELS[preset.interval];
+        aggInfo.style.display = 'inline-block';
+      } else {
+        aggInfo.style.display = 'none';
+      }
 
       document.getElementById('chartLoading').style.display = 'block';
       document.getElementById('chartError').style.display = 'none';
