@@ -1,49 +1,11 @@
 {% extends "stationsdischarge/base.html" %}
 
-{% block styles %}
-  {{ super() }}
-  <style>
-    .dashboard-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #eee; }
-    .dashboard-header h1 { margin: 0; font-size: 22px; }
-    .dashboard-header .station-badges { display: flex; gap: 6px; }
-    .dashboard-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 20px; padding: 15px; background: #f9f9f9; border: 1px solid #eee; border-radius: 6px; }
-    .dashboard-controls .control-group { display: flex; flex-direction: column; gap: 4px; }
-    .dashboard-controls label { font-size: 12px; font-weight: 600; color: #555; }
-    .dashboard-controls input[type="datetime-local"] { padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
-    .time-presets { display: flex; gap: 5px; flex-wrap: wrap; }
-    .time-presets .btn { padding: 5px 12px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; transition: all 0.15s; }
-    .time-presets .btn:hover { background: #e9ecef; }
-    .time-presets .btn.active { background: #0b6efd; color: #fff; border-color: #0b6efd; }
-    .dashboard-actions { display: flex; gap: 8px; margin-left: auto; }
-    .dashboard-actions .btn { padding: 5px 12px; font-size: 12px; text-decoration: none; }
-    .chart-container { position: relative; height: 400px; margin-bottom: 25px; background: #fff; border: 1px solid #eee; border-radius: 6px; padding: 15px; }
-    .chart-loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #888; font-size: 14px; }
-    .chart-error { color: #dc3545; padding: 20px; text-align: center; }
-    .data-table-container { margin-bottom: 30px; }
-    .data-table-container h3 { font-size: 16px; margin-bottom: 10px; }
-    .data-table-wrapper { max-height: 400px; overflow-y: auto; border: 1px solid #eee; border-radius: 6px; }
-    .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .data-table thead { position: sticky; top: 0; z-index: 1; }
-    .data-table th { background: #f5f7fa; padding: 8px 12px; text-align: left; font-weight: 600; color: #555; border-bottom: 2px solid #ddd; }
-    .data-table td { padding: 6px 12px; border-bottom: 1px solid #f0f0f0; }
-    .data-table tr:hover td { background: #f8f9fa; }
-    .data-table .num { text-align: right; font-family: monospace; }
-    .dashboard-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
-    .summary-card { background: #fff; border: 1px solid #eee; border-radius: 6px; padding: 15px; text-align: center; }
-    .summary-card .label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-    .summary-card .value { font-size: 24px; font-weight: 700; color: #333; }
-    .summary-card .unit { font-size: 12px; color: #888; }
-    .curve-info { background: #f0f7ff; border: 1px solid #cce0ff; border-radius: 6px; padding: 12px 16px; margin-bottom: 20px; font-size: 13px; }
-    .curve-info code { background: #e2edf8; padding: 2px 5px; border-radius: 3px; }
-    #noDataMsg { display: none; text-align: center; padding: 40px; color: #888; }
-  </style>
-{% endblock %}
-
 {% block subtitle %}{{ _('Dashboard') }} — {{ station.title }}{% endblock %}
 
 {% block primary_content_inner %}
-  {# Header #}
-  <div class="dashboard-header">
+
+  {# ── Header ──────────────────────────────────────── #}
+  <div class="dash-header">
     <div>
       <div class="station-badges">
         <span class="badge {{ h.stationsdischarge_status_badge_class(station.station_status) }}">
@@ -55,14 +17,18 @@
       </div>
       <h1><i class="fa fa-tachometer"></i> {{ station.title }}</h1>
       {% if station.river_name %}
-        <small class="text-muted">{{ station.river_name }}{% if station.basin_name %} · {{ station.basin_name }}{% endif %}</small>
+        <div class="dash-header-sub">
+          {{ station.river_name }}{% if station.basin_name %} · {{ station.basin_name }}{% endif %}
+          {% if station.elevation_masl %} · {{ station.elevation_masl }} m a.s.l.{% endif %}
+        </div>
       {% endif %}
     </div>
   </div>
 
-  {# Rating curve info #}
+  {# ── Rating curve info banner ────────────────────── #}
   {% if station.curve_type %}
-  <div class="curve-info">
+  <div class="dash-curve-info">
+    <i class="fa fa-line-chart"></i>
     <strong>{{ _('Rating Curve') }}:</strong>
     {{ h.stationsdischarge_curve_type_label(station.curve_type) }} —
     <code>{{ h.stationsdischarge_format_curve_summary(station.curve_type, station.curve_params_json) }}</code>
@@ -72,11 +38,11 @@
   </div>
   {% endif %}
 
-  {# Controls #}
-  <div class="dashboard-controls">
-    <div class="control-group">
+  {# ── Controls bar ────────────────────────────────── #}
+  <div class="dash-controls">
+    <div class="ctrl-group">
       <label>{{ _('Time Range') }}</label>
-      <div class="time-presets">
+      <div class="dash-presets">
         <button class="btn" data-hours="1">1h</button>
         <button class="btn" data-hours="6">6h</button>
         <button class="btn active" data-hours="24">24h</button>
@@ -87,76 +53,234 @@
         <button class="btn" data-hours="8760">1y</button>
       </div>
     </div>
-    <div class="control-group">
+    <div class="ctrl-group">
       <label>{{ _('From') }}</label>
-      <input type="datetime-local" id="startDate" />
+      <input type="datetime-local" id="dashStart" />
     </div>
-    <div class="control-group">
+    <div class="ctrl-group">
       <label>{{ _('To') }}</label>
-      <input type="datetime-local" id="endDate" />
+      <input type="datetime-local" id="dashEnd" />
     </div>
-    <div class="control-group">
+    <div class="ctrl-group">
       <label>&nbsp;</label>
-      <button class="btn btn-primary" id="btnApply" style="padding:5px 16px; font-size:13px;">
+      <button class="btn btn-primary" id="dashApply" style="padding:5px 14px; font-size:12px;">
         <i class="fa fa-refresh"></i> {{ _('Apply') }}
       </button>
     </div>
-    <div style="display:flex; align-items:center; gap:8px;">
-      <span id="aggInfo" class="badge badge-info" style="display:none; font-size:11px; padding:4px 8px;"></span>
-    </div>
-    <div class="dashboard-actions">
-      <a id="csvLink" href="{{ csv_url }}" class="btn btn-default" title="{{ _('Download CSV') }}">
+    <span class="dash-agg-badge" id="dashAggBadge"></span>
+    <div class="dash-actions">
+      <a id="dashCsvLink" href="{{ csv_url }}" class="btn" title="{{ _('Download CSV') }}">
         <i class="fa fa-download"></i> CSV
       </a>
-      <a href="{{ geojson_url }}?include_telemetry=true" class="btn btn-default" target="_blank" title="{{ _('GeoJSON') }}">
+      <a href="{{ geojson_url }}?include_telemetry=true" class="btn" target="_blank" title="{{ _('GeoJSON') }}">
         <i class="fa fa-globe"></i> GeoJSON
       </a>
     </div>
   </div>
 
-  {# Summary cards #}
-  <div class="dashboard-summary">
-    <div class="summary-card">
-      <div class="label">{{ _('Latest Level') }}</div>
-      <div class="value" id="summaryH">—</div>
-      <div class="unit">{{ station.unit_level or 'm' }}</div>
+  {# ── Toolbar: chart types + options + auto-refresh + fullscreen ── #}
+  <div class="dash-toolbar">
+    <div class="dash-chart-types">
+      <button class="type-btn active" data-type="line" title="{{ _('Line Chart') }}">
+        <i class="fa fa-line-chart"></i> {{ _('Line') }}
+      </button>
+      <button class="type-btn" data-type="area" title="{{ _('Area Chart') }}">
+        <i class="fa fa-area-chart"></i> {{ _('Area') }}
+      </button>
+      <button class="type-btn" data-type="bar" title="{{ _('Bar Chart') }}">
+        <i class="fa fa-bar-chart"></i> {{ _('Bar') }}
+      </button>
+      <button class="type-btn" data-type="scatter" title="{{ _('Scatter Plot') }}">
+        <i class="fa fa-braille"></i> {{ _('Scatter') }}
+      </button>
     </div>
-    <div class="summary-card">
-      <div class="label">{{ _('Latest Discharge') }}</div>
-      <div class="value" id="summaryQ">—</div>
-      <div class="unit">{{ station.unit_flow or 'm³/s' }}</div>
-    </div>
-    <div class="summary-card">
-      <div class="label">{{ _('Data Points') }}</div>
-      <div class="value" id="summaryCount">—</div>
-      <div class="unit">{{ _('records') }}</div>
-    </div>
-    <div class="summary-card">
-      <div class="label">{{ _('Last Update') }}</div>
-      <div class="value" id="summaryTime" style="font-size:14px;">—</div>
-      <div class="unit">UTC</div>
+
+    <div class="dash-toolbar-right">
+      {# Auto-refresh #}
+      <div class="dash-autorefresh">
+        <label class="dash-toggle" title="{{ _('Auto-refresh') }}">
+          <input type="checkbox" id="dashAutoRefresh" />
+          <span class="slider"></span>
+        </label>
+        <select id="dashAutoInterval" title="{{ _('Refresh interval') }}">
+          <option value="30">30s</option>
+          <option value="60" selected>1m</option>
+          <option value="300">5m</option>
+        </select>
+        <span class="dash-pulse" id="dashPulse"></span>
+        <span class="dash-countdown" id="dashCountdown"></span>
+      </div>
+
+      {# Chart options toggle #}
+      <button class="icon-btn" id="dashOptToggle" title="{{ _('Chart Options') }}">
+        <i class="fa fa-sliders"></i> {{ _('Options') }}
+      </button>
+
+      {# Fullscreen #}
+      <button class="icon-btn" id="dashFullscreen" title="{{ _('Fullscreen') }}">
+        <i class="fa fa-expand"></i>
+      </button>
     </div>
   </div>
 
-  {# Chart #}
-  <div class="chart-container">
-    <canvas id="dischargeChart"></canvas>
-    <div class="chart-loading" id="chartLoading">
+  {# ── Chart options panel (collapsible) ───────────── #}
+  <div id="dashOptPanel" class="dash-options-panel">
+    <div class="dash-options-grid">
+      <div class="dash-opt-group">
+        <label>{{ _('Line Width') }} <span class="range-val" id="optLineWidthVal">2px</span></label>
+        <input type="range" id="optLineWidth" min="1" max="5" value="2" step="0.5" />
+      </div>
+      <div class="dash-opt-group">
+        <label>{{ _('Line Tension') }}</label>
+        <select id="optTension">
+          <option value="0">{{ _('Angular') }}</option>
+          <option value="0.3" selected>{{ _('Smooth') }}</option>
+          <option value="0.5">{{ _('Very Smooth') }}</option>
+        </select>
+      </div>
+      <div class="dash-opt-group">
+        <label>{{ _('Fill Area') }}</label>
+        <label class="dash-toggle">
+          <input type="checkbox" id="optFill" checked />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="dash-opt-group">
+        <label>{{ _('Show Points') }}</label>
+        <label class="dash-toggle">
+          <input type="checkbox" id="optPoints" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="dash-opt-group">
+        <label>{{ _('Level Color') }}</label>
+        <div class="dash-color-presets">
+          <span class="dash-color-swatch active" data-target="h" data-color="#0b6efd" style="background:#0b6efd;" title="Blue"></span>
+          <span class="dash-color-swatch" data-target="h" data-color="#0dcaf0" style="background:#0dcaf0;" title="Cyan"></span>
+          <span class="dash-color-swatch" data-target="h" data-color="#198754" style="background:#198754;" title="Green"></span>
+          <span class="dash-color-swatch" data-target="h" data-color="#6f42c1" style="background:#6f42c1;" title="Purple"></span>
+          <span class="dash-color-swatch" data-target="h" data-color="#fd7e14" style="background:#fd7e14;" title="Orange"></span>
+        </div>
+      </div>
+      <div class="dash-opt-group">
+        <label>{{ _('Discharge Color') }}</label>
+        <div class="dash-color-presets">
+          <span class="dash-color-swatch active" data-target="q" data-color="#dc3545" style="background:#dc3545;" title="Red"></span>
+          <span class="dash-color-swatch" data-target="q" data-color="#ff9800" style="background:#ff9800;" title="Orange"></span>
+          <span class="dash-color-swatch" data-target="q" data-color="#e91e63" style="background:#e91e63;" title="Pink"></span>
+          <span class="dash-color-swatch" data-target="q" data-color="#795548" style="background:#795548;" title="Brown"></span>
+          <span class="dash-color-swatch" data-target="q" data-color="#607d8b" style="background:#607d8b;" title="Grey"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Summary cards ───────────────────────────────── #}
+  <div class="dash-stats">
+    <div class="dash-stat-card highlight">
+      <div class="stat-label">{{ _('Latest Level') }}</div>
+      <div class="stat-value" id="dashSummH">—</div>
+      <div class="stat-unit">{{ station.unit_level or 'm' }}</div>
+    </div>
+    <div class="dash-stat-card highlight">
+      <div class="stat-label">{{ _('Latest Discharge') }}</div>
+      <div class="stat-value" id="dashSummQ">—</div>
+      <div class="stat-unit">{{ station.unit_flow or 'm³/s' }}</div>
+    </div>
+    <div class="dash-stat-card">
+      <div class="stat-label">{{ _('Data Points') }}</div>
+      <div class="stat-value" id="dashSummCount">—</div>
+      <div class="stat-unit">{{ _('records') }}</div>
+    </div>
+    <div class="dash-stat-card">
+      <div class="stat-label">{{ _('Last Update') }}</div>
+      <div class="stat-value" id="dashSummTime" style="font-size:13px;">—</div>
+      <div class="stat-unit">UTC</div>
+    </div>
+  </div>
+
+  {# ── Statistics panel ────────────────────────────── #}
+  <div class="dash-stats">
+    {# Water Level stats #}
+    <div class="dash-stat-card">
+      <div class="stat-label">{{ _('Min Level') }}</div>
+      <div class="stat-value" id="statHMin" style="font-size:18px;">—</div>
+      <div class="stat-unit">{{ station.unit_level or 'm' }}</div>
+    </div>
+    <div class="dash-stat-card">
+      <div class="stat-label">{{ _('Max Level') }}</div>
+      <div class="stat-value" id="statHMax" style="font-size:18px;">—</div>
+      <div class="stat-unit">{{ station.unit_level or 'm' }}</div>
+    </div>
+    <div class="dash-stat-card">
+      <div class="stat-label">{{ _('Avg Level') }}</div>
+      <div class="stat-value" id="statHAvg" style="font-size:18px;">—</div>
+      <div class="stat-unit">{{ station.unit_level or 'm' }}</div>
+    </div>
+    <div class="dash-stat-card">
+      <div class="stat-label">{{ _('Std Dev Level') }}</div>
+      <div class="stat-value" id="statHStd" style="font-size:18px;">—</div>
+      <div class="stat-unit">σ</div>
+    </div>
+    {# Discharge stats #}
+    <div class="dash-stat-card">
+      <div class="stat-label">{{ _('Min Discharge') }}</div>
+      <div class="stat-value" id="statQMin" style="font-size:18px;">—</div>
+      <div class="stat-unit">{{ station.unit_flow or 'm³/s' }}</div>
+    </div>
+    <div class="dash-stat-card">
+      <div class="stat-label">{{ _('Max Discharge') }}</div>
+      <div class="stat-value" id="statQMax" style="font-size:18px;">—</div>
+      <div class="stat-unit">{{ station.unit_flow or 'm³/s' }}</div>
+    </div>
+    <div class="dash-stat-card">
+      <div class="stat-label">{{ _('Avg Discharge') }}</div>
+      <div class="stat-value" id="statQAvg" style="font-size:18px;">—</div>
+      <div class="stat-unit">{{ station.unit_flow or 'm³/s' }}</div>
+    </div>
+    <div class="dash-stat-card">
+      <div class="stat-label">{{ _('Std Dev Discharge') }}</div>
+      <div class="stat-value" id="statQStd" style="font-size:18px;">—</div>
+      <div class="stat-unit">σ</div>
+    </div>
+  </div>
+
+  {# ── Main chart ──────────────────────────────────── #}
+  <div class="dash-chart-wrap dash-main-chart" id="dashMainWrap">
+    <button class="dash-reset-zoom" id="dashResetZoom">
+      <i class="fa fa-search-minus"></i> {{ _('Reset Zoom') }}
+    </button>
+    <canvas id="dashMainCanvas"></canvas>
+    <div class="dash-chart-loading" id="dashLoading">
       <i class="fa fa-spinner fa-spin"></i> {{ _('Loading data...') }}
     </div>
-    <div class="chart-error" id="chartError" style="display:none;"></div>
+    <div class="dash-chart-error" id="dashError"></div>
   </div>
 
-  <div id="noDataMsg">
-    <i class="fa fa-info-circle" style="font-size:32px;display:block;margin-bottom:10px;"></i>
+  <div class="dash-no-data" id="dashNoData">
+    <i class="fa fa-info-circle"></i>
     {{ _('No telemetry data available for the selected time range.') }}
   </div>
 
-  {# Data table #}
-  <div class="data-table-container">
-    <h3><i class="fa fa-table"></i> {{ _('Data Table') }}</h3>
-    <div class="data-table-wrapper">
-      <table class="data-table" id="dataTable">
+  {# ── H-Q Rating Curve chart ──────────────────────── #}
+  <div id="dashHQSection" {% if not station.curve_type %}style="display:none;"{% endif %}>
+    <div class="dash-chart-wrap dash-hq-chart">
+      <div class="dash-chart-title">
+        <i class="fa fa-crosshairs"></i> {{ _('Rating Curve: H vs Q') }}
+      </div>
+      <canvas id="dashHQCanvas"></canvas>
+    </div>
+  </div>
+
+  {# ── Data table ──────────────────────────────────── #}
+  <div class="dash-table-section">
+    <div class="dash-table-header">
+      <h3><i class="fa fa-table"></i> {{ _('Data Table') }}</h3>
+      <input type="text" class="dash-table-search" id="dashTableSearch"
+             placeholder="{{ _('Search...') }}" />
+    </div>
+    <div class="dash-table-wrap">
+      <table class="dash-table">
         <thead>
           <tr>
             <th>{{ _('Timestamp (UTC)') }}</th>
@@ -164,12 +288,14 @@
             <th class="num">{{ _('Discharge') }} ({{ station.unit_flow or 'm³/s' }})</th>
           </tr>
         </thead>
-        <tbody id="dataTableBody">
+        <tbody id="dashTableBody">
           <tr><td colspan="3" style="text-align:center;color:#888;padding:20px;">{{ _('Loading...') }}</td></tr>
         </tbody>
       </table>
     </div>
+    <div class="dash-table-count" id="dashTableCount"></div>
   </div>
+
 {% endblock %}
 
 {% block secondary_content %}
@@ -204,256 +330,30 @@
   {{ super() }}
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"></script>
   <script>
-  (function() {
-    var DISCHARGE_URL = {{ discharge_url | tojson }};
-    var CSV_URL = {{ csv_url | tojson }};
-    var chart = null;
-
-    // ── Time range presets with aggregation config ──
-    var PRESETS = {
-      1:    { label: '1h',  limit: 500,  agg: null,  interval: null },
-      6:    { label: '6h',  limit: 1000, agg: null,  interval: null },
-      24:   { label: '24h', limit: 2000, agg: null,  interval: null },
-      168:  { label: '7d',  limit: 5000, agg: null,  interval: null },
-      720:  { label: '30d', limit: 744,  agg: 'AVG', interval: 3600000 },
-      2160: { label: '90d', limit: 720,  agg: 'AVG', interval: 10800000 },
-      4380: { label: '6m',  limit: 180,  agg: 'AVG', interval: 86400000 },
-      8760: { label: '1y',  limit: 366,  agg: 'AVG', interval: 86400000 },
+    window.DASH_CONFIG = {
+      dischargeUrl: {{ discharge_url | tojson }},
+      csvUrl: {{ csv_url | tojson }},
+      unitLevel: {{ (station.unit_level or 'm') | tojson }},
+      unitFlow: {{ (station.unit_flow or 'm³/s') | tojson }},
+      curveType: {{ (station.curve_type or '') | tojson }},
+      curveParams: {{ (station.curve_params_json or 'null') | safe }},
+      i18n: {
+        water_level: {{ _('Water Level') | tojson }},
+        discharge: {{ _('Discharge') | tojson }},
+        time_utc: {{ _('Time (UTC)') | tojson }},
+        showing: {{ _('Showing') | tojson }},
+        hourly_avg: {{ _('hourly avg') | tojson }},
+        '3h_avg': {{ _('3-hour avg') | tojson }},
+        daily_avg: {{ _('daily avg') | tojson }},
+        no_data: {{ _('No data') | tojson }},
+        records: {{ _('records') | tojson }},
+        theoretical_curve: {{ _('Theoretical Curve') | tojson }},
+        observed_points: {{ _('Observed Points') | tojson }},
+      }
     };
-
-    var AGG_LABELS = {
-      3600000:   '{{ _("hourly avg") }}',
-      10800000:  '{{ _("3-hour avg") }}',
-      86400000:  '{{ _("daily avg") }}',
-    };
-
-    // ── Time controls ──
-    var activeHours = 24;
-    var presetBtns = document.querySelectorAll('.time-presets .btn');
-
-    function setPreset(hours) {
-      activeHours = hours;
-      presetBtns.forEach(function(b) { b.classList.remove('active'); });
-      var target = document.querySelector('[data-hours="' + hours + '"]');
-      if (target) target.classList.add('active');
-
-      var now = new Date();
-      var start = new Date(now.getTime() - hours * 3600 * 1000);
-      document.getElementById('startDate').value = toLocalISO(start);
-      document.getElementById('endDate').value = toLocalISO(now);
-      fetchData();
-    }
-
-    function toLocalISO(d) {
-      var off = d.getTimezoneOffset();
-      var local = new Date(d.getTime() - off * 60000);
-      return local.toISOString().slice(0, 16);
-    }
-
-    function toUTCString(ts) {
-      var d = new Date(ts);
-      return d.getUTCFullYear() + '-' +
-        String(d.getUTCMonth() + 1).padStart(2, '0') + '-' +
-        String(d.getUTCDate()).padStart(2, '0') + ' ' +
-        String(d.getUTCHours()).padStart(2, '0') + ':' +
-        String(d.getUTCMinutes()).padStart(2, '0') + ':' +
-        String(d.getUTCSeconds()).padStart(2, '0');
-    }
-
-    presetBtns.forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        setPreset(parseInt(this.getAttribute('data-hours')));
-      });
-    });
-
-    document.getElementById('btnApply').addEventListener('click', function() {
-      presetBtns.forEach(function(b) { b.classList.remove('active'); });
-      activeHours = 0;
-      fetchData();
-    });
-
-    // ── Fetch & render ──
-    function fetchData() {
-      var startVal = document.getElementById('startDate').value;
-      var endVal = document.getElementById('endDate').value;
-      if (!startVal || !endVal) return;
-
-      var startTs = new Date(startVal).getTime();
-      var endTs = new Date(endVal).getTime();
-
-      var preset = PRESETS[activeHours];
-      var limit = (preset && preset.limit) || 2000;
-      var url = DISCHARGE_URL + '?start_ts=' + startTs + '&end_ts=' + endTs + '&limit=' + limit;
-      var csvParams = '?start_ts=' + startTs + '&end_ts=' + endTs + '&limit=10000';
-
-      if (preset && preset.agg) {
-        url += '&agg=' + preset.agg + '&interval=' + preset.interval;
-        csvParams += '&agg=' + preset.agg + '&interval=' + preset.interval;
-      }
-
-      document.getElementById('csvLink').href = CSV_URL + csvParams;
-
-      // Show aggregation info
-      var aggInfo = document.getElementById('aggInfo');
-      if (preset && preset.agg && AGG_LABELS[preset.interval]) {
-        aggInfo.textContent = '⚡ {{ _("Showing") }} ' + AGG_LABELS[preset.interval];
-        aggInfo.style.display = 'inline-block';
-      } else {
-        aggInfo.style.display = 'none';
-      }
-
-      document.getElementById('chartLoading').style.display = 'block';
-      document.getElementById('chartError').style.display = 'none';
-      document.getElementById('noDataMsg').style.display = 'none';
-
-      fetch(url)
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          document.getElementById('chartLoading').style.display = 'none';
-          if (data.error) {
-            document.getElementById('chartError').style.display = 'block';
-            document.getElementById('chartError').textContent = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
-            return;
-          }
-          renderData(data);
-        })
-        .catch(function(err) {
-          document.getElementById('chartLoading').style.display = 'none';
-          document.getElementById('chartError').style.display = 'block';
-          document.getElementById('chartError').textContent = 'Error: ' + err.message;
-        });
-    }
-
-    function renderData(data) {
-      var discharge = data.discharge || {};
-      var points = [];
-      for (var key in discharge) {
-        points = points.concat(discharge[key]);
-      }
-      points.sort(function(a, b) { return (a.ts || 0) - (b.ts || 0); });
-
-      if (points.length === 0) {
-        document.getElementById('noDataMsg').style.display = 'block';
-        updateSummary(null, null, 0, null);
-        renderTable([]);
-        if (chart) { chart.destroy(); chart = null; }
-        return;
-      }
-
-      // Summary
-      var last = points[points.length - 1];
-      updateSummary(last.h, last.q, points.length, last.ts);
-
-      // Chart
-      renderChart(points, data.unit_level || 'm', data.unit_flow || 'm³/s');
-
-      // Table
-      renderTable(points);
-    }
-
-    function updateSummary(h, q, count, ts) {
-      document.getElementById('summaryH').textContent = h !== null && h !== undefined ? parseFloat(h).toFixed(2) : '—';
-      document.getElementById('summaryQ').textContent = q !== null && q !== undefined ? parseFloat(q).toFixed(4) : '—';
-      document.getElementById('summaryCount').textContent = count;
-      document.getElementById('summaryTime').textContent = ts ? toUTCString(ts) : '—';
-    }
-
-    function renderChart(points, unitH, unitQ) {
-      var labels = points.map(function(p) { return new Date(p.ts); });
-      var hData = points.map(function(p) { return p.h; });
-      var qData = points.map(function(p) { return p.q; });
-
-      if (chart) chart.destroy();
-
-      var ctx = document.getElementById('dischargeChart').getContext('2d');
-      chart = new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels: labels,
-          datasets: [
-            {
-              label: 'Water Level (' + unitH + ')',
-              data: hData,
-              borderColor: '#0b6efd',
-              backgroundColor: 'rgba(11,110,253,0.08)',
-              fill: true,
-              tension: 0.3,
-              pointRadius: points.length > 200 ? 0 : 2,
-              yAxisID: 'yH',
-              order: 2,
-            },
-            {
-              label: 'Discharge (' + unitQ + ')',
-              data: qData,
-              borderColor: '#dc3545',
-              backgroundColor: 'rgba(220,53,69,0.08)',
-              fill: false,
-              tension: 0.3,
-              pointRadius: points.length > 200 ? 0 : 2,
-              borderDash: [5, 3],
-              yAxisID: 'yQ',
-              order: 1,
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: { mode: 'index', intersect: false },
-          plugins: {
-            tooltip: {
-              callbacks: {
-                title: function(items) { return toUTCString(items[0].parsed.x); }
-              }
-            },
-            legend: { position: 'top' }
-          },
-          scales: {
-            x: {
-              type: 'time',
-              time: { tooltipFormat: 'yyyy-MM-dd HH:mm' },
-              title: { display: true, text: 'Time (UTC)' }
-            },
-            yH: {
-              type: 'linear',
-              position: 'left',
-              title: { display: true, text: 'Water Level (' + unitH + ')' },
-              grid: { drawOnChartArea: true },
-            },
-            yQ: {
-              type: 'linear',
-              position: 'right',
-              title: { display: true, text: 'Discharge (' + unitQ + ')' },
-              grid: { drawOnChartArea: false },
-            }
-          }
-        }
-      });
-    }
-
-    function renderTable(points) {
-      var tbody = document.getElementById('dataTableBody');
-      if (points.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#888;padding:20px;">No data</td></tr>';
-        return;
-      }
-      var html = '';
-      // Show newest first in table
-      var sorted = points.slice().reverse();
-      for (var i = 0; i < sorted.length; i++) {
-        var p = sorted[i];
-        html += '<tr>' +
-          '<td>' + (p.ts ? toUTCString(p.ts) : '—') + '</td>' +
-          '<td class="num">' + (p.h !== null && p.h !== undefined ? parseFloat(p.h).toFixed(2) : '—') + '</td>' +
-          '<td class="num">' + (p.q !== null && p.q !== undefined ? parseFloat(p.q).toFixed(4) : '—') + '</td>' +
-          '</tr>';
-      }
-      tbody.innerHTML = html;
-    }
-
-    // Init: load 24h
-    setPreset(24);
-  })();
   </script>
+  <script src="/stationsdischarge-dashboard.js"></script>
 {% endblock %}
