@@ -1,0 +1,170 @@
+{# Dataset create/edit form snippet #}
+{% set action = form_action %}
+
+{% if error_summary %}
+  <div class="alert alert-danger">
+    <strong>{{ _('Errors in the form:') }}</strong>
+    <ul>
+      {% for field, msg in error_summary.items() %}
+        <li><strong>{{ field }}</strong>: {{ msg }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+<form method="post" action="{{ action }}" class="station-form">
+  {{ h.csrf_input() if 'csrf_input' in h }}
+
+  {# ── Section 1: Basic Info ── #}
+  <fieldset>
+    <legend><i class="fa fa-info-circle"></i> {{ _('Dataset Information') }}</legend>
+
+    <div class="form-group{% if errors.title %} has-error{% endif %}">
+      <label for="title">{{ _('Title') }} *</label>
+      <input type="text" id="title" name="title" class="form-control"
+             value="{{ data.title or '' }}" required />
+    </div>
+
+    <div class="form-group{% if errors.name %} has-error{% endif %}">
+      <label for="name">{{ _('URL Slug') }}</label>
+      <input type="text" id="name" name="name" class="form-control"
+             value="{{ data.name or '' }}" placeholder="{{ _('Auto-generated from title') }}" />
+      <span class="help-text">{{ _('Leave empty to auto-generate from title.') }}</span>
+    </div>
+
+    <div class="form-group">
+      <label for="description">{{ _('Description') }}</label>
+      <textarea id="description" name="description" class="form-control" rows="3">{{ data.description or '' }}</textarea>
+    </div>
+
+    <div class="form-group">
+      <label for="owner_org">{{ _('Organization') }}</label>
+      <select id="owner_org" name="owner_org" class="form-control">
+        <option value="">{{ _('— Select —') }}</option>
+        {% for org in organizations %}
+          <option value="{{ org.id }}" {% if data.owner_org == org.id %}selected{% endif %}>
+            {{ org.display_name or org.title }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+  </fieldset>
+
+  {# ── Section 2: Query/Export Settings ── #}
+  <fieldset>
+    <legend><i class="fa fa-cog"></i> {{ _('Export Settings') }}</legend>
+
+    <div class="form-group">
+      <label for="time_range">{{ _('Default Time Range') }}</label>
+      <select id="time_range" name="time_range" class="form-control">
+        {% set tr = data.time_range or '24h' %}
+        <option value="1h" {% if tr == '1h' %}selected{% endif %}>1 {{ _('hour') }}</option>
+        <option value="6h" {% if tr == '6h' %}selected{% endif %}>6 {{ _('hours') }}</option>
+        <option value="24h" {% if tr == '24h' %}selected{% endif %}>24 {{ _('hours') }}</option>
+        <option value="7d" {% if tr == '7d' %}selected{% endif %}>7 {{ _('days') }}</option>
+        <option value="30d" {% if tr == '30d' %}selected{% endif %}>30 {{ _('days') }}</option>
+        <option value="90d" {% if tr == '90d' %}selected{% endif %}>90 {{ _('days') }}</option>
+        <option value="6m" {% if tr == '6m' %}selected{% endif %}>6 {{ _('months') }}</option>
+        <option value="1y" {% if tr == '1y' %}selected{% endif %}>1 {{ _('year') }}</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="agg">{{ _('Aggregation') }}</label>
+      <select id="agg" name="agg" class="form-control">
+        {% set agg_val = data.agg or '' %}
+        <option value="" {% if not agg_val %}selected{% endif %}>{{ _('None (raw data)') }}</option>
+        <option value="AVG" {% if agg_val == 'AVG' %}selected{% endif %}>{{ _('Average') }}</option>
+        <option value="MIN" {% if agg_val == 'MIN' %}selected{% endif %}>{{ _('Minimum') }}</option>
+        <option value="MAX" {% if agg_val == 'MAX' %}selected{% endif %}>{{ _('Maximum') }}</option>
+        <option value="SUM" {% if agg_val == 'SUM' %}selected{% endif %}>{{ _('Sum') }}</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="interval_ms">{{ _('Aggregation Interval (ms)') }}</label>
+      <select id="interval_ms" name="interval_ms" class="form-control">
+        {% set iv = data.interval_ms|string if data.interval_ms else '' %}
+        <option value="" {% if not iv %}selected{% endif %}>{{ _('Default') }}</option>
+        <option value="60000" {% if iv == '60000' %}selected{% endif %}>1 {{ _('minute') }}</option>
+        <option value="300000" {% if iv == '300000' %}selected{% endif %}>5 {{ _('minutes') }}</option>
+        <option value="900000" {% if iv == '900000' %}selected{% endif %}>15 {{ _('minutes') }}</option>
+        <option value="3600000" {% if iv == '3600000' %}selected{% endif %}>1 {{ _('hour') }}</option>
+        <option value="86400000" {% if iv == '86400000' %}selected{% endif %}>1 {{ _('day') }}</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="export_format">{{ _('Preferred Export Format') }}</label>
+      <select id="export_format" name="export_format" class="form-control">
+        {% set ef = data.export_format or 'geojson' %}
+        <option value="geojson" {% if ef == 'geojson' %}selected{% endif %}>GeoJSON</option>
+        <option value="csv" {% if ef == 'csv' %}selected{% endif %}>CSV</option>
+      </select>
+    </div>
+  </fieldset>
+
+  {# ── Section 3: Station Picker ── #}
+  <fieldset>
+    <legend><i class="fa fa-map-marker"></i> {{ _('Stations') }}</legend>
+
+    <div class="form-group">
+      <label>{{ _('Select stations to include in this dataset:') }}</label>
+      <input type="text" id="ds-station-search" class="form-control"
+             placeholder="{{ _('Filter stations...') }}" style="margin-bottom:10px;" />
+
+      {# Build a comma-separated string of selected station IDs #}
+      {% if data.stations_detail %}
+        {% set selected_csv = data.stations_detail | map(attribute='id') | join(',') %}
+      {% elif data.stations %}
+        {% set selected_csv = data.stations | map(attribute='station_id') | join(',') %}
+      {% elif data.station_ids %}
+        {% set selected_csv = data.station_ids | join(',') %}
+      {% else %}
+        {% set selected_csv = '' %}
+      {% endif %}
+
+      <div id="ds-station-list" style="max-height:400px; overflow-y:auto; border:1px solid #ddd; border-radius:4px; padding:8px;">
+        {% for station in all_stations %}
+        <label class="ds-station-item" style="display:block; padding:6px 8px; margin:0; cursor:pointer; border-bottom:1px solid #f0f0f0;">
+          <input type="checkbox" name="station_ids" value="{{ station.id }}"
+                 {% if station.id in selected_csv %}checked{% endif %} />
+          <strong>{{ station.title }}</strong>
+          <small class="text-muted">
+            ({{ station.station_id }})
+            {% if station.river_name %} · {{ station.river_name }}{% endif %}
+            {% if station.country %} · {{ station.country }}{% endif %}
+          </small>
+        </label>
+        {% endfor %}
+      </div>
+      <small class="text-muted">{{ all_stations|length }} {{ _('stations available') }}</small>
+    </div>
+  </fieldset>
+
+  {# ── Submit ── #}
+  <div class="form-actions" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee;">
+    <button type="submit" class="btn btn-primary">
+      <i class="fa fa-check"></i>
+      {% if is_edit %}{{ _('Update Dataset') }}{% else %}{{ _('Create Dataset') }}{% endif %}
+    </button>
+    <a href="{{ h.url_for('hydro_datasets.ds_index') }}" class="btn btn-default">
+      {{ _('Cancel') }}
+    </a>
+  </div>
+</form>
+
+<script>
+(function() {
+  var search = document.getElementById('ds-station-search');
+  if (!search) return;
+  search.addEventListener('input', function() {
+    var q = this.value.toLowerCase();
+    var items = document.querySelectorAll('.ds-station-item');
+    items.forEach(function(item) {
+      var text = item.textContent.toLowerCase();
+      item.style.display = text.indexOf(q) !== -1 ? '' : 'none';
+    });
+  });
+})();
+</script>

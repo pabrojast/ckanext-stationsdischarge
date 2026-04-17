@@ -1,0 +1,147 @@
+{% extends "stationsdischarge/base.html" %}
+
+{% block subtitle %}{{ dataset.title }} - {{ _('Dataset') }}{% endblock %}
+
+{% block primary_content_inner %}
+  <div style="margin-bottom:20px;">
+    <h1><i class="fa fa-folder-open"></i> {{ dataset.title }}</h1>
+    {% if dataset.description %}
+      <p class="text-muted">{{ dataset.description }}</p>
+    {% endif %}
+
+    {# Action buttons #}
+    <div class="btn-group">
+      {% if h.check_access('dataset_update', {'id': dataset.id}) %}
+        <a href="{{ h.url_for('hydro_datasets.ds_edit', name=dataset.name) }}" class="btn btn-primary">
+          <i class="fa fa-pencil"></i> {{ _('Edit') }}
+        </a>
+      {% endif %}
+      {% if h.check_access('dataset_delete', {'id': dataset.id}) %}
+        <a href="{{ h.url_for('hydro_datasets.ds_delete', name=dataset.name) }}" class="btn btn-danger">
+          <i class="fa fa-trash"></i> {{ _('Delete') }}
+        </a>
+      {% endif %}
+    </div>
+
+    {# Export links #}
+    <div style="margin-top: 10px;">
+      <a href="{{ geojson_url }}" class="btn btn-default btn-sm" target="_blank" title="{{ _('GeoJSON') }}">
+        <i class="fa fa-globe"></i> GeoJSON
+      </a>
+      <a href="{{ geojson_url }}?include_telemetry=true" class="btn btn-default btn-sm" target="_blank"
+         title="{{ _('GeoJSON with telemetry') }}">
+        <i class="fa fa-globe"></i> GeoJSON + {{ _('Telemetry') }}
+      </a>
+      <a href="{{ csv_url }}" class="btn btn-default btn-sm" title="{{ _('CSV') }}">
+        <i class="fa fa-download"></i> CSV
+      </a>
+      <a href="{{ csv_url }}?include_telemetry=true" class="btn btn-default btn-sm"
+         title="{{ _('CSV with telemetry') }}">
+        <i class="fa fa-download"></i> CSV + {{ _('Telemetry') }}
+      </a>
+    </div>
+  </div>
+
+  {# ── Export Settings ── #}
+  <div class="station-detail-section">
+    <h2><i class="fa fa-cog"></i> {{ _('Export Settings') }}</h2>
+    <table class="station-detail-table">
+      <tr><th>{{ _('Default Time Range') }}</th><td>{{ dataset.time_range or '24h' }}</td></tr>
+      {% if dataset.agg %}
+        <tr><th>{{ _('Aggregation') }}</th><td>{{ dataset.agg }}</td></tr>
+      {% endif %}
+      {% if dataset.interval_ms %}
+        <tr><th>{{ _('Interval') }}</th><td>{{ dataset.interval_ms }} ms</td></tr>
+      {% endif %}
+      <tr><th>{{ _('Export Format') }}</th><td>{{ dataset.export_format or 'geojson' }}</td></tr>
+    </table>
+  </div>
+
+  {# ── Stations ── #}
+  <div class="station-detail-section">
+    <h2><i class="fa fa-map-marker"></i> {{ _('Stations') }} ({{ dataset.stations_detail|length }})</h2>
+
+    {% if dataset.stations_detail %}
+      <table class="table table-striped">
+        <thead>
+          <tr>
+            <th>{{ _('Title') }}</th>
+            <th>{{ _('Station ID') }}</th>
+            <th>{{ _('Location') }}</th>
+            <th>{{ _('Status') }}</th>
+            <th>{{ _('Keys') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for st in dataset.stations_detail %}
+          <tr>
+            <td>
+              <a href="{{ h.url_for('hydro_stations.show', name=st.name) }}">
+                {{ st.title }}
+              </a>
+            </td>
+            <td><code>{{ st.station_id }}</code></td>
+            <td>
+              {% if st.river_name %}{{ st.river_name }}{% endif %}
+              {% if st.country %} · {{ st.country }}{% endif %}
+              {% if st.latitude and st.longitude %}
+                <br><small>{{ st.latitude }}, {{ st.longitude }}</small>
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge {{ h.stationsdischarge_status_badge_class(st.station_status) }}">
+                {{ h.stationsdischarge_station_status_label(st.station_status) }}
+              </span>
+            </td>
+            <td>
+              {% if st.telemetry_keys %}
+                {% for tk in st.telemetry_keys %}
+                  <code>{{ tk.telemetry_key }}</code>{% if not loop.last %}, {% endif %}
+                {% endfor %}
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="text-muted">{{ _('No stations in this dataset.') }}</p>
+    {% endif %}
+  </div>
+
+  {# ── Metadata ── #}
+  <div class="station-detail-section">
+    <h2><i class="fa fa-info-circle"></i> {{ _('Metadata') }}</h2>
+    <table class="station-detail-table">
+      <tr><th>{{ _('URL Slug') }}</th><td>{{ dataset.name }}</td></tr>
+      {% if dataset.created %}
+        <tr><th>{{ _('Created') }}</th><td>{{ dataset.created }}</td></tr>
+      {% endif %}
+      {% if dataset.modified %}
+        <tr><th>{{ _('Last Modified') }}</th><td>{{ dataset.modified }}</td></tr>
+      {% endif %}
+    </table>
+  </div>
+{% endblock %}
+
+{% block secondary_content %}
+  <div class="module module-narrow module-shallow">
+    <h2 class="module-heading">
+      <i class="fa fa-arrow-left"></i>
+      <a href="{{ h.url_for('hydro_datasets.ds_index') }}">{{ _('Back to Datasets') }}</a>
+    </h2>
+  </div>
+
+  <div class="module module-narrow module-shallow">
+    <h2 class="module-heading">
+      <i class="fa fa-link"></i>
+      {{ _('API Endpoints') }}
+    </h2>
+    <div class="module-content" style="font-size:12px;">
+      <p><a href="{{ geojson_url }}" target="_blank">GeoJSON</a></p>
+      <p><a href="{{ csv_url }}" target="_blank">CSV</a></p>
+    </div>
+  </div>
+{% endblock %}

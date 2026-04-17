@@ -2,6 +2,7 @@
 
 {% set data = data or {} %}
 {% set errors = errors or {} %}
+{% set telemetry_keys = data.telemetry_keys or [] %}
 
 <form class="dataset-form station-form" method="post" action="{{ form_action }}">
   {{ h.csrf_input() if 'csrf_input' in h }}
@@ -27,28 +28,23 @@
     </div>
     <div class="station-form-section-body">
 
-      {# Title #}
       {{ form.input('title', id='field-title', label=_('Station Name') + ' *',
          placeholder=_('e.g. Río Maipo – Puente El Manzano'),
          value=data.title, error=errors.title,
          classes=['control-full', 'control-large'],
          attrs={'class': 'form-control'}) }}
 
-      {# URL slug #}
       {{ form.input('name', id='field-name', label=_('URL Slug') + ' *',
          placeholder=_('e.g. est-rio-maipo-puente-manzano'),
          value=data.name, error=errors.name,
          attrs={'class': 'form-control'}) }}
       <p class="help-text">{{ _('URL-friendly identifier. Auto-generated from title if left empty.') }}</p>
 
-      {# Station ID #}
       {{ form.input('station_id', id='field-station-id', label=_('Station ID') + ' *',
          placeholder=_('e.g. EST-MAIPO-001'),
          value=data.station_id, error=errors.station_id,
          attrs={'class': 'form-control'}) }}
-      <p class="help-text">{{ _('Unique identifier used by the external rating-service.') }}</p>
 
-      {# Organization #}
       <div class="form-group control-group{% if errors.owner_org %} error{% endif %}">
         <label for="field-owner-org" class="control-label">{{ _('Organization') }} *</label>
         <div class="controls">
@@ -65,7 +61,6 @@
         {% if errors.owner_org %}<span class="error-block">{{ errors.owner_org | join(', ') }}</span>{% endif %}
       </div>
 
-      {# Station Status #}
       <div class="form-group control-group{% if errors.station_status %} error{% endif %}">
         <label for="field-station-status" class="control-label">{{ _('Station Status') }} *</label>
         <div class="controls">
@@ -86,14 +81,12 @@
         {% if errors.station_status %}<span class="error-block">{{ errors.station_status | join(', ') }}</span>{% endif %}
       </div>
 
-      {# Description #}
       {{ form.markdown('notes', id='field-notes', label=_('Description'),
          placeholder=_('Describe the station, its purpose, equipment, etc.'),
          value=data.notes, error=errors.notes) }}
 
-      {# Tags #}
       {{ form.input('tag_string', id='field-tags', label=_('Tags'),
-         placeholder=_('e.g. hydrology, water level, discharge'),
+         placeholder=_('e.g. hydrology, water level'),
          value=data.tag_string, error=errors.tag_string,
          attrs={'class': 'form-control'}) }}
 
@@ -109,39 +102,33 @@
     </div>
     <div class="station-form-section-body">
 
-      {# Latitude #}
       {{ form.input('latitude', id='field-latitude', label=_('Latitude') + ' *',
          placeholder='-33.5982',
          value=data.latitude, error=errors.latitude,
          attrs={'class': 'form-control', 'type': 'number', 'step': 'any', 'min': '-90', 'max': '90'}) }}
       <p class="help-text">{{ _('Decimal degrees (WGS 84). Range: −90 to 90.') }}</p>
 
-      {# Longitude #}
       {{ form.input('longitude', id='field-longitude', label=_('Longitude') + ' *',
          placeholder='-70.3451',
          value=data.longitude, error=errors.longitude,
          attrs={'class': 'form-control', 'type': 'number', 'step': 'any', 'min': '-180', 'max': '180'}) }}
       <p class="help-text">{{ _('Decimal degrees (WGS 84). Range: −180 to 180.') }}</p>
 
-      {# River name #}
       {{ form.input('river_name', id='field-river-name', label=_('River / Water Body'),
          placeholder=_('e.g. Río Maipo'),
          value=data.river_name, error=errors.river_name,
          attrs={'class': 'form-control'}) }}
 
-      {# Basin name #}
       {{ form.input('basin_name', id='field-basin-name', label=_('Basin'),
          placeholder=_('e.g. Maipo Basin'),
          value=data.basin_name, error=errors.basin_name,
          attrs={'class': 'form-control'}) }}
 
-      {# Country #}
       {{ form.input('country', id='field-country', label=_('Country'),
          placeholder=_('e.g. Chile'),
          value=data.country, error=errors.country,
          attrs={'class': 'form-control'}) }}
 
-      {# Elevation #}
       {{ form.input('elevation_masl', id='field-elevation', label=_('Elevation (m a.s.l.)'),
          placeholder='842',
          value=data.elevation_masl, error=errors.elevation_masl,
@@ -159,15 +146,23 @@
     </div>
     <div class="station-form-section-body">
 
-      {# ThingsBoard Entity ID #}
-      {{ form.input('thingsboard_entity_id', id='field-tb-entity-id',
-         label=_('ThingsBoard Entity ID') + ' *',
-         placeholder='784f394c-42b6-11ec-81d3-0242ac130003',
-         value=data.thingsboard_entity_id, error=errors.thingsboard_entity_id,
-         attrs={'class': 'form-control'}) }}
-      <p class="help-text">{{ _('UUID of the entity in ThingsBoard.') }}</p>
+      <div class="form-group control-group{% if errors.thingsboard_entity_id %} error{% endif %}">
+        <label for="field-tb-entity-id" class="control-label">{{ _('ThingsBoard Entity ID') }}</label>
+        <div class="controls" style="display: flex; gap: 8px; align-items: start;">
+          <input id="field-tb-entity-id" name="thingsboard_entity_id" type="text"
+                 class="form-control" style="flex: 1;"
+                 placeholder="784f394c-42b6-11ec-81d3-0242ac130003"
+                 value="{{ data.thingsboard_entity_id or '' }}">
+          <button type="button" id="btn-fetch-tb" class="btn btn-info"
+                  title="{{ _('Fetch metadata from ThingsBoard') }}">
+            <i class="fa fa-cloud-download"></i> {{ _('Fetch') }}
+          </button>
+        </div>
+        <p class="help-text">{{ _('UUID of the device in ThingsBoard. Click Fetch to auto-fill fields.') }}</p>
+        {% if errors.thingsboard_entity_id %}<span class="error-block">{{ errors.thingsboard_entity_id | join(', ') }}</span>{% endif %}
+        <div id="tb-fetch-status" class="alert" style="display:none; margin-top:8px;"></div>
+      </div>
 
-      {# ThingsBoard Device ID #}
       {{ form.input('thingsboard_device_id', id='field-tb-device-id',
          label=_('ThingsBoard Device ID'),
          placeholder='784f394c-42b6-11ec-81d3-0242ac130003',
@@ -175,170 +170,70 @@
          attrs={'class': 'form-control'}) }}
       <p class="help-text">{{ _('Only if the device ID differs from the entity ID above.') }}</p>
 
-      {# Telemetry Key #}
-      {{ form.input('thingsboard_telemetry_key', id='field-tb-telemetry-key',
-         label=_('Telemetry Key') + ' *',
-         placeholder='water_level',
-         value=data.thingsboard_telemetry_key, error=errors.thingsboard_telemetry_key,
-         attrs={'class': 'form-control'}) }}
-      <p class="help-text">{{ _('The telemetry key name in ThingsBoard (e.g. water_level).') }}</p>
-
-      {# Observed Variable #}
-      <div class="form-group control-group{% if errors.observed_variable %} error{% endif %}">
-        <label for="field-observed-variable" class="control-label">{{ _('Observed Variable') }} *</label>
-        <div class="controls">
-          <select id="field-observed-variable" name="observed_variable" class="form-control">
-            {% set var_choices = [
-              ('water_level', _('Water Level')),
-              ('precipitation', _('Precipitation')),
-              ('discharge', _('Discharge')),
-              ('water_temperature', _('Water Temperature')),
-              ('sediment_load', _('Sediment Load')),
-              ('other', _('Other'))
-            ] %}
-            {% for value, label in var_choices %}
-              <option value="{{ value }}"
-                {% if (data.observed_variable or 'water_level') == value %}selected{% endif %}>
-                {{ label }}
-              </option>
-            {% endfor %}
-          </select>
-        </div>
-        {% if errors.observed_variable %}<span class="error-block">{{ errors.observed_variable | join(', ') }}</span>{% endif %}
-      </div>
-
     </div>
   </div>
 
   {# ══════════════════════════════════════════════════════
-     SECTION 4: Measurement Units
+     SECTION 4: Telemetry Keys
      ══════════════════════════════════════════════════════ #}
   <div class="station-form-section">
     <div class="station-form-section-header">
-      <h3><i class="fa fa-balance-scale"></i> {{ _('Measurement Units') }}</h3>
+      <h3><i class="fa fa-key"></i> {{ _('Telemetry Keys') }}</h3>
     </div>
     <div class="station-form-section-body">
+      <p class="help-text">{{ _('Add the telemetry keys (variables) that this station monitors.') }}</p>
 
-      {# Level Unit #}
-      <div class="form-group control-group{% if errors.unit_level %} error{% endif %}">
-        <label for="field-unit-level" class="control-label">{{ _('Level Unit') }} *</label>
-        <div class="controls">
-          <select id="field-unit-level" name="unit_level" class="form-control">
-            {% set level_choices = [
-              ('m', _('Metres (m)')),
-              ('cm', _('Centimetres (cm)')),
-              ('mm', _('Millimetres (mm)')),
-              ('ft', _('Feet (ft)'))
-            ] %}
-            {% for value, label in level_choices %}
-              <option value="{{ value }}"
-                {% if (data.unit_level or 'm') == value %}selected{% endif %}>
-                {{ label }}
-              </option>
-            {% endfor %}
-          </select>
+      <div id="telemetry-keys-container">
+        {% for tk in telemetry_keys %}
+        <div class="tk-row" data-index="{{ loop.index0 }}">
+          <div class="row" style="margin-bottom: 8px;">
+            <div class="col-md-3">
+              <input type="text" name="tk_key_{{ loop.index0 }}" class="form-control"
+                     placeholder="{{ _('Key (e.g. water_level)') }}"
+                     value="{{ tk.telemetry_key or '' }}">
+            </div>
+            <div class="col-md-3">
+              <input type="text" name="tk_label_{{ loop.index0 }}" class="form-control"
+                     placeholder="{{ _('Label (e.g. Water Level)') }}"
+                     value="{{ tk.label or '' }}">
+            </div>
+            <div class="col-md-2">
+              <input type="text" name="tk_unit_{{ loop.index0 }}" class="form-control"
+                     placeholder="{{ _('Unit (e.g. m)') }}"
+                     value="{{ tk.unit or '' }}">
+            </div>
+            <div class="col-md-3">
+              <select name="tk_variable_type_{{ loop.index0 }}" class="form-control">
+                <option value="">{{ _('Variable type...') }}</option>
+                {% set var_types = [
+                  ('water_level', _('Water Level')),
+                  ('precipitation', _('Precipitation')),
+                  ('water_temperature', _('Water Temperature')),
+                  ('air_temperature', _('Air Temperature')),
+                  ('humidity', _('Humidity')),
+                  ('wind_speed', _('Wind Speed')),
+                  ('solar_radiation', _('Solar Radiation')),
+                  ('soil_moisture', _('Soil Moisture')),
+                  ('other', _('Other'))
+                ] %}
+                {% for val, lbl in var_types %}
+                  <option value="{{ val }}" {% if tk.variable_type == val %}selected{% endif %}>{{ lbl }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-1">
+              <button type="button" class="btn btn-danger btn-sm tk-remove" title="{{ _('Remove') }}">
+                <i class="fa fa-trash"></i>
+              </button>
+            </div>
+          </div>
         </div>
-        {% if errors.unit_level %}<span class="error-block">{{ errors.unit_level | join(', ') }}</span>{% endif %}
+        {% endfor %}
       </div>
 
-      {# Flow Unit #}
-      <div class="form-group control-group{% if errors.unit_flow %} error{% endif %}">
-        <label for="field-unit-flow" class="control-label">{{ _('Flow Unit') }} *</label>
-        <div class="controls">
-          <select id="field-unit-flow" name="unit_flow" class="form-control">
-            {% set flow_choices = [
-              ('m3/s', _('Cubic metres per second (m³/s)')),
-              ('l/s', _('Litres per second (l/s)')),
-              ('ft3/s', _('Cubic feet per second (ft³/s)'))
-            ] %}
-            {% for value, label in flow_choices %}
-              <option value="{{ value }}"
-                {% if (data.unit_flow or 'm3/s') == value %}selected{% endif %}>
-                {{ label }}
-              </option>
-            {% endfor %}
-          </select>
-        </div>
-        {% if errors.unit_flow %}<span class="error-block">{{ errors.unit_flow | join(', ') }}</span>{% endif %}
-      </div>
-
-    </div>
-  </div>
-
-  {# ══════════════════════════════════════════════════════
-     SECTION 5: Rating Curve
-     ══════════════════════════════════════════════════════ #}
-  <div class="station-form-section">
-    <div class="station-form-section-header">
-      <h3><i class="fa fa-line-chart"></i> {{ _('Rating Curve') }}</h3>
-    </div>
-    <div class="station-form-section-body">
-
-      {# Curve Type #}
-      <div class="form-group control-group{% if errors.curve_type %} error{% endif %}">
-        <label for="field-curve-type" class="control-label">{{ _('Curve Type') }} *</label>
-        <div class="controls">
-          <select id="field-curve-type" name="curve_type" class="form-control">
-            {% set curve_choices = [
-              ('power', _('Power law Q = a·(H − h₀)ᵇ')),
-              ('linear_segments', _('Linear segments')),
-              ('table_interpolation', _('Table interpolation (H–Q table)')),
-              ('piecewise_power', _('Piecewise power law'))
-            ] %}
-            {% for value, label in curve_choices %}
-              <option value="{{ value }}"
-                {% if (data.curve_type or 'power') == value %}selected{% endif %}>
-                {{ label }}
-              </option>
-            {% endfor %}
-          </select>
-        </div>
-        {% if errors.curve_type %}<span class="error-block">{{ errors.curve_type | join(', ') }}</span>{% endif %}
-      </div>
-
-      {# Curve Parameters JSON #}
-      <div class="form-group control-group{% if errors.curve_params_json %} error{% endif %}">
-        <label for="field-curve-params" class="control-label">{{ _('Curve Parameters (JSON)') }} *</label>
-        <div class="controls">
-          <textarea id="field-curve-params" name="curve_params_json" class="form-control"
-                    rows="8" style="font-family: monospace; font-size: 13px;"
-                    placeholder='Power:      {"a": 2.5, "b": 1.8, "h0": 0.15}
-Segments:   {"segments": [{"h_min":0,"h_max":1,"slope":2.5,"intercept":0}]}
-Table:      {"table": [{"h":0,"q":0}, {"h":0.5,"q":1.2}]}
-Piecewise:  {"segments": [{"h_max":1.8,"a":38.91,"b":1.93}, {"a":30.53,"b":2.34}]}'>{{ data.curve_params_json or '' }}</textarea>
-        </div>
-        <p class="help-text">
-          {{ _('JSON object matching the selected curve type:') }}<br>
-          <strong>Power:</strong> <code>{"a": 2.5, "b": 1.8, "h0": 0.15}</code><br>
-          <strong>Linear segments:</strong> <code>{"segments": [{"h_min": 0, "h_max": 1, "slope": 2.5, "intercept": 0}]}</code><br>
-          <strong>Table interpolation:</strong> <code>{"table": [{"h": 0, "q": 0}, {"h": 0.5, "q": 1.2}]}</code><br>
-          <strong>Piecewise power:</strong> <code>{"segments": [{"h_max": 1.8, "a": 38.91, "b": 1.93}, {"a": 30.53, "b": 2.34}]}</code><br>
-          <span class="text-muted">{{ _('Optional transform: add "transform_offset" and "transform_divisor" for H = offset − raw/divisor') }}</span>
-        </p>
-        {% if errors.curve_params_json %}<span class="error-block">{{ errors.curve_params_json | join(', ') }}</span>{% endif %}
-      </div>
-
-      {# Valid From #}
-      {{ form.input('curve_valid_from', id='field-curve-valid-from',
-         label=_('Valid From'),
-         placeholder='2024-01-01',
-         value=data.curve_valid_from, error=errors.curve_valid_from,
-         attrs={'class': 'form-control', 'type': 'date'}) }}
-
-      {# Valid To #}
-      {{ form.input('curve_valid_to', id='field-curve-valid-to',
-         label=_('Valid To'),
-         placeholder='',
-         value=data.curve_valid_to, error=errors.curve_valid_to,
-         attrs={'class': 'form-control', 'type': 'date'}) }}
-      <p class="help-text">{{ _('Leave empty if this is the current rating curve.') }}</p>
-
-      {# Curve Notes #}
-      {{ form.input('curve_notes', id='field-curve-notes',
-         label=_('Curve Notes'),
-         placeholder=_('e.g. Calibrated with 12 gauging measurements, R² = 0.97'),
-         value=data.curve_notes, error=errors.curve_notes,
-         attrs={'class': 'form-control'}) }}
+      <button type="button" id="btn-add-tk" class="btn btn-default btn-sm" style="margin-top: 8px;">
+        <i class="fa fa-plus"></i> {{ _('Add Telemetry Key') }}
+      </button>
 
     </div>
   </div>
@@ -359,3 +254,137 @@ Piecewise:  {"segments": [{"h_max":1.8,"a":38.91,"b":1.93}, {"a":30.53,"b":2.34}
   </div>
 
 </form>
+
+<script>
+(function() {
+  // ── Telemetry Keys dynamic rows ──
+  var container = document.getElementById('telemetry-keys-container');
+  var addBtn = document.getElementById('btn-add-tk');
+  var nextIndex = container ? container.querySelectorAll('.tk-row').length : 0;
+
+  var varTypeOptions = '<option value="">Variable type...</option>' +
+    '<option value="water_level">Water Level</option>' +
+    '<option value="precipitation">Precipitation</option>' +
+    '<option value="water_temperature">Water Temperature</option>' +
+    '<option value="air_temperature">Air Temperature</option>' +
+    '<option value="humidity">Humidity</option>' +
+    '<option value="wind_speed">Wind Speed</option>' +
+    '<option value="solar_radiation">Solar Radiation</option>' +
+    '<option value="soil_moisture">Soil Moisture</option>' +
+    '<option value="other">Other</option>';
+
+  function addKeyRow(key, label, unit, varType) {
+    var idx = nextIndex++;
+    var html = '<div class="tk-row" data-index="' + idx + '">' +
+      '<div class="row" style="margin-bottom: 8px;">' +
+      '<div class="col-md-3"><input type="text" name="tk_key_' + idx + '" class="form-control" placeholder="Key" value="' + (key || '') + '"></div>' +
+      '<div class="col-md-3"><input type="text" name="tk_label_' + idx + '" class="form-control" placeholder="Label" value="' + (label || '') + '"></div>' +
+      '<div class="col-md-2"><input type="text" name="tk_unit_' + idx + '" class="form-control" placeholder="Unit" value="' + (unit || '') + '"></div>' +
+      '<div class="col-md-3"><select name="tk_variable_type_' + idx + '" class="form-control">' + varTypeOptions + '</select></div>' +
+      '<div class="col-md-1"><button type="button" class="btn btn-danger btn-sm tk-remove" title="Remove"><i class="fa fa-trash"></i></button></div>' +
+      '</div></div>';
+    container.insertAdjacentHTML('beforeend', html);
+    if (varType) {
+      var sel = container.querySelector('.tk-row[data-index="' + idx + '"] select');
+      if (sel) sel.value = varType;
+    }
+  }
+
+  if (addBtn) {
+    addBtn.addEventListener('click', function() { addKeyRow('', '', '', ''); });
+  }
+
+  if (container) {
+    container.addEventListener('click', function(e) {
+      var btn = e.target.closest('.tk-remove');
+      if (btn) btn.closest('.tk-row').remove();
+    });
+  }
+
+  // ── ThingsBoard Fetch ──
+  var fetchBtn = document.getElementById('btn-fetch-tb');
+  var statusDiv = document.getElementById('tb-fetch-status');
+
+  if (fetchBtn) {
+    fetchBtn.addEventListener('click', function() {
+      var entityId = document.getElementById('field-tb-entity-id').value.trim();
+      if (!entityId) {
+        statusDiv.className = 'alert alert-warning';
+        statusDiv.textContent = 'Please enter a ThingsBoard Entity ID first.';
+        statusDiv.style.display = 'block';
+        return;
+      }
+
+      fetchBtn.disabled = true;
+      statusDiv.className = 'alert alert-info';
+      statusDiv.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Fetching metadata from ThingsBoard...';
+      statusDiv.style.display = 'block';
+
+      var formData = new FormData();
+      formData.append('entity_id', entityId);
+
+      fetch('{{ h.url_for("hydro_stations.fetch_tb_metadata") }}', {
+        method: 'POST',
+        body: formData,
+      })
+      .then(function(resp) { return resp.json(); })
+      .then(function(data) {
+        fetchBtn.disabled = false;
+        if (data.error) {
+          statusDiv.className = 'alert alert-danger';
+          statusDiv.textContent = 'Error: ' + JSON.stringify(data.error);
+          return;
+        }
+
+        // Fill device info
+        var dev = data.device || {};
+        var attrs = data.attributes || {};
+
+        if (dev.name) {
+          var titleField = document.getElementById('field-title');
+          if (titleField && !titleField.value) titleField.value = dev.label || dev.name;
+        }
+        if (dev.description) {
+          var notesField = document.getElementById('field-notes');
+          if (notesField && !notesField.value) notesField.value = dev.description;
+        }
+
+        // Fill location from attributes
+        var latField = document.getElementById('field-latitude');
+        var lonField = document.getElementById('field-longitude');
+        if (latField && !latField.value && attrs.latitude) latField.value = attrs.latitude;
+        if (lonField && !lonField.value && attrs.longitude) lonField.value = attrs.longitude;
+
+        // Fill telemetry keys
+        var keys = data.telemetry_keys || [];
+        if (keys.length > 0) {
+          // Clear existing empty rows
+          var existingRows = container.querySelectorAll('.tk-row');
+          var hasData = false;
+          existingRows.forEach(function(row) {
+            var keyInput = row.querySelector('input[name^="tk_key_"]');
+            if (keyInput && keyInput.value.trim()) hasData = true;
+          });
+
+          if (!hasData) {
+            container.innerHTML = '';
+            nextIndex = 0;
+          }
+
+          keys.forEach(function(k) { addKeyRow(k, k, '', ''); });
+        }
+
+        statusDiv.className = 'alert alert-success';
+        statusDiv.textContent = 'Metadata fetched successfully! ' +
+          (dev.name ? 'Device: ' + dev.name + '. ' : '') +
+          keys.length + ' telemetry key(s) found.';
+      })
+      .catch(function(err) {
+        fetchBtn.disabled = false;
+        statusDiv.className = 'alert alert-danger';
+        statusDiv.textContent = 'Error: ' + err.message;
+      });
+    });
+  }
+})();
+</script>

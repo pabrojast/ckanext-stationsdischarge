@@ -137,18 +137,85 @@ def station_telemetry(context, data_dict):
 
 
 @toolkit.auth_allow_anonymous_access
-def station_discharge(context, data_dict):
-    """Same access rules as station_show — delegates to it."""
-    return station_show(context, data_dict)
-
-
-@toolkit.auth_allow_anonymous_access
 def station_geojson(context, data_dict):
     """Anyone can access the GeoJSON endpoint (only approved stations returned)."""
     return {"success": True}
 
 
+# ── Dataset auth functions ──
+
+def dataset_create(context, data_dict):
+    """Organization editors/admins and sysadmins can create datasets."""
+    if _is_sysadmin(context):
+        return {"success": True}
+    user = context.get("user")
+    if not user:
+        return {"success": False, "msg": "Must be logged in to create datasets."}
+    org_id = data_dict.get("owner_org")
+    if org_id and _is_org_member(user, org_id, "editor"):
+        return {"success": True}
+    return {"success": False, "msg": "Not authorized to create datasets in this organization."}
+
+
 @toolkit.auth_allow_anonymous_access
-def station_discharge_csv(context, data_dict):
-    """Same access rules as station_show."""
-    return station_show(context, data_dict)
+def dataset_show(context, data_dict):
+    """Anyone can view datasets."""
+    return {"success": True}
+
+
+def dataset_update(context, data_dict):
+    """Author, org admin/editor, or sysadmin can update."""
+    if _is_sysadmin(context):
+        return {"success": True}
+    user = context.get("user")
+    if not user:
+        return {"success": False, "msg": "Must be logged in."}
+    from ckanext.stationsdischarge.db import HydroDataset
+    ds_id = data_dict.get("id") or data_dict.get("name")
+    ds = None
+    if ds_id:
+        ds = HydroDataset.get(id=ds_id) or HydroDataset.get(name=ds_id)
+    if ds:
+        user_obj = model.User.get(user)
+        if user_obj and ds.user_id == user_obj.id:
+            return {"success": True}
+        if _is_org_member(user, ds.owner_org, "editor"):
+            return {"success": True}
+    return {"success": False, "msg": "Not authorized to update this dataset."}
+
+
+def dataset_delete(context, data_dict):
+    """Only sysadmins or dataset author can delete."""
+    if _is_sysadmin(context):
+        return {"success": True}
+    user = context.get("user")
+    if not user:
+        return {"success": False, "msg": "Must be logged in."}
+    from ckanext.stationsdischarge.db import HydroDataset
+    ds_id = data_dict.get("id") or data_dict.get("name")
+    ds = None
+    if ds_id:
+        ds = HydroDataset.get(id=ds_id) or HydroDataset.get(name=ds_id)
+    if ds:
+        user_obj = model.User.get(user)
+        if user_obj and ds.user_id == user_obj.id:
+            return {"success": True}
+    return {"success": False, "msg": "Not authorized to delete this dataset."}
+
+
+@toolkit.auth_allow_anonymous_access
+def dataset_list(context, data_dict):
+    """Anyone can list datasets."""
+    return {"success": True}
+
+
+@toolkit.auth_allow_anonymous_access
+def dataset_geojson(context, data_dict):
+    """Anyone can access dataset GeoJSON."""
+    return {"success": True}
+
+
+@toolkit.auth_allow_anonymous_access
+def dataset_csv(context, data_dict):
+    """Anyone can access dataset CSV."""
+    return {"success": True}

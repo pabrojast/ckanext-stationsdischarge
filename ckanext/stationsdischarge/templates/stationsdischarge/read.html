@@ -39,10 +39,7 @@
     {# Export links #}
     {% if station.thingsboard_entity_id %}
     <div style="margin-top: 10px;">
-      <a href="{{ h.url_for('hydro_stations.discharge_csv', name=station.name) }}" class="btn btn-default btn-sm" title="{{ _('Download CSV') }}">
-        <i class="fa fa-download"></i> CSV
-      </a>
-      <a href="{{ h.url_for('hydro_stations.discharge', name=station.name) }}" class="btn btn-default btn-sm" target="_blank" title="{{ _('JSON API') }}">
+      <a href="{{ h.url_for('hydro_stations.telemetry', name=station.name) }}" class="btn btn-default btn-sm" target="_blank" title="{{ _('Telemetry JSON API') }}">
         <i class="fa fa-code"></i> JSON
       </a>
       <a href="{{ h.url_for('hydro_stations.geojson') }}?include_telemetry=true" class="btn btn-default btn-sm" target="_blank" title="{{ _('GeoJSON') }}">
@@ -104,47 +101,41 @@
   <div class="station-detail-section">
     <h2><i class="fa fa-plug"></i> {{ _('IoT Sensor Connection') }}</h2>
     <table class="station-detail-table">
-      <tr><th>{{ _('ThingsBoard Entity ID') }}</th><td><code>{{ station.thingsboard_entity_id }}</code></td></tr>
+      {% if station.thingsboard_entity_id %}
+        <tr><th>{{ _('ThingsBoard Entity ID') }}</th><td><code>{{ station.thingsboard_entity_id }}</code></td></tr>
+      {% endif %}
       {% if station.thingsboard_device_id %}
         <tr><th>{{ _('ThingsBoard Device ID') }}</th><td><code>{{ station.thingsboard_device_id }}</code></td></tr>
       {% endif %}
-      <tr><th>{{ _('Telemetry Key') }}</th><td><code>{{ station.thingsboard_telemetry_key }}</code></td></tr>
-      <tr><th>{{ _('Observed Variable') }}</th><td>{{ h.stationsdischarge_observed_variable_label(station.observed_variable) }}</td></tr>
     </table>
   </div>
 
-  {# ── Measurement Units ── #}
+  {# ── Telemetry Keys ── #}
+  {% if station.telemetry_keys %}
   <div class="station-detail-section">
-    <h2><i class="fa fa-balance-scale"></i> {{ _('Measurement Units') }}</h2>
-    <table class="station-detail-table">
-      <tr><th>{{ _('Level Unit') }}</th><td>{{ h.stationsdischarge_unit_level_label(station.unit_level) }}</td></tr>
-      <tr><th>{{ _('Flow Unit') }}</th><td>{{ h.stationsdischarge_unit_flow_label(station.unit_flow) }}</td></tr>
+    <h2><i class="fa fa-key"></i> {{ _('Telemetry Keys') }}</h2>
+    <table class="station-detail-table table table-striped">
+      <thead>
+        <tr>
+          <th>{{ _('Key') }}</th>
+          <th>{{ _('Label') }}</th>
+          <th>{{ _('Unit') }}</th>
+          <th>{{ _('Variable Type') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for tk in station.telemetry_keys %}
+        <tr>
+          <td><code>{{ tk.telemetry_key }}</code></td>
+          <td>{{ tk.label or '—' }}</td>
+          <td>{{ tk.unit or '—' }}</td>
+          <td>{{ tk.variable_type or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
     </table>
   </div>
-
-  {# ── Rating Curve ── #}
-  <div class="station-detail-section">
-    <h2><i class="fa fa-line-chart"></i> {{ _('Rating Curve') }}</h2>
-    <table class="station-detail-table">
-      <tr><th>{{ _('Curve Type') }}</th><td>{{ h.stationsdischarge_curve_type_label(station.curve_type) }}</td></tr>
-      <tr><th>{{ _('Summary') }}</th><td>{{ h.stationsdischarge_format_curve_summary(station.curve_type, station.curve_params_json) }}</td></tr>
-      <tr>
-        <th>{{ _('Parameters (JSON)') }}</th>
-        <td>
-          <div class="curve-params-display">{{ station.curve_params_json }}</div>
-        </td>
-      </tr>
-      {% if station.curve_valid_from %}
-        <tr><th>{{ _('Valid From') }}</th><td>{{ station.curve_valid_from }}</td></tr>
-      {% endif %}
-      {% if station.curve_valid_to %}
-        <tr><th>{{ _('Valid To') }}</th><td>{{ station.curve_valid_to }}</td></tr>
-      {% endif %}
-      {% if station.curve_notes %}
-        <tr><th>{{ _('Notes') }}</th><td>{{ station.curve_notes }}</td></tr>
-      {% endif %}
-    </table>
-  </div>
+  {% endif %}
 
   {# ── Workflow Info ── #}
   {% if station.submission_status != 'approved' %}

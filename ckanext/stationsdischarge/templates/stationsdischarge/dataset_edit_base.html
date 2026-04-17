@@ -1,29 +1,30 @@
 {% extends "stationsdischarge/base.html" %}
 
 {% block subtitle %}
-  {% if is_edit %}{{ _('Edit Station') }}{% else %}{{ _('New Station') }}{% endif %}
+  {% if is_edit %}{{ _('Edit Dataset') }}{% else %}{{ _('New Dataset') }}{% endif %}
 {% endblock %}
 
 {% block primary_content_inner %}
   <h1>
     {% if is_edit %}
-      <i class="fa fa-pencil"></i> {{ _('Edit Station') }}
+      <i class="fa fa-pencil"></i> {{ _('Edit Dataset') }}
       {% if data.title %} — {{ data.title }}{% endif %}
     {% else %}
-      <i class="fa fa-plus"></i> {{ _('New Hydrometric Station') }}
+      <i class="fa fa-plus"></i> {{ _('New Station Dataset') }}
     {% endif %}
   </h1>
 
-  {% snippet "stationsdischarge/station_form.html",
+  {% snippet "stationsdischarge/dataset_form.html",
      data=data, errors=errors, error_summary=error_summary,
-     organizations=organizations, form_action=form_action, is_edit=is_edit %}
+     organizations=organizations, all_stations=all_stations,
+     form_action=form_action, is_edit=is_edit %}
 {% endblock %}
 
 {% block secondary_content %}
   <div class="module module-narrow module-shallow">
     <h2 class="module-heading">
       <i class="fa fa-arrow-left"></i>
-      <a href="{{ h.url_for('hydro_stations.index') }}">{{ _('Back to Stations') }}</a>
+      <a href="{{ h.url_for('hydro_datasets.ds_index') }}">{{ _('Back to Datasets') }}</a>
     </h2>
   </div>
 
@@ -33,8 +34,8 @@
       {{ _('Help') }}
     </h2>
     <div class="module-content">
-      <p>{{ _('Fields marked with * are required.') }}</p>
-      <p>{{ _('Use the "Fetch from ThingsBoard" button to auto-fill device metadata and available telemetry keys.') }}</p>
+      <p>{{ _('Create a dataset to group stations together. You can then export the grouped stations as GeoJSON or CSV.') }}</p>
+      <p>{{ _('Configure default time range and aggregation settings for telemetry exports.') }}</p>
     </div>
   </div>
 {% endblock %}

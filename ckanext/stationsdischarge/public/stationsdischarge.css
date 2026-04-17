@@ -186,18 +186,6 @@
   border-bottom: 1px solid #f0f0f0;
 }
 
-/* JSON params display */
-.curve-params-display {
-  background: #f8f9fa;
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
-  padding: 12px;
-  font-family: monospace;
-  font-size: 13px;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
 /* Workflow buttons */
 .station-workflow-buttons {
   margin-top: 20px;
@@ -272,29 +260,6 @@
   color: #777;
   font-size: 13px;
 }
-
-/* Curve info banner */
-.dash-curve-info {
-  background: #f0f7ff;
-  border: 1px solid #cce0ff;
-  border-radius: 6px;
-  padding: 10px 16px;
-  margin-bottom: 16px;
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.dash-curve-info code {
-  background: #e2edf8;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 12px;
-}
-
-.dash-curve-info i { color: #0b6efd; }
 
 /* Controls bar */
 .dash-controls {
@@ -654,10 +619,6 @@
   height: 420px;
 }
 
-.dash-hq-chart {
-  height: 320px;
-}
-
 .dash-chart-title {
   font-size: 14px;
   font-weight: 600;
@@ -828,7 +789,6 @@
   .dash-toolbar-right { margin-left: 0; }
   .dash-stats { grid-template-columns: repeat(2, 1fr); }
   .dash-main-chart { height: 300px; }
-  .dash-hq-chart { height: 250px; }
   .dash-options-grid { grid-template-columns: 1fr; }
   .dash-table-search { width: 100%; }
 }

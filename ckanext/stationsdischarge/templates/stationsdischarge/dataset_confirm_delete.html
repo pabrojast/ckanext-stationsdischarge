@@ -1,0 +1,27 @@
+{% extends "stationsdischarge/base.html" %}
+
+{% block subtitle %}{{ _('Delete Dataset') }} - {{ dataset.title }}{% endblock %}
+
+{% block primary_content_inner %}
+  <div class="station-delete-confirm">
+    <h2><i class="fa fa-exclamation-triangle"></i> {{ _('Delete Dataset') }}</h2>
+    <p>{{ _('Are you sure you want to delete the dataset:') }}</p>
+    <h3>{{ dataset.title }}</h3>
+    {% if dataset.stations_detail %}
+      <p class="text-muted">{{ _('Contains') }} {{ dataset.stations_detail|length }} {{ _('stations') }}</p>
+    {% endif %}
+    <p class="text-danger"><strong>{{ _('This action cannot be undone. Stations will not be deleted.') }}</strong></p>
+
+    <form method="post" action="{{ h.url_for('hydro_datasets.ds_delete', name=dataset.name) }}">
+      {{ h.csrf_input() if 'csrf_input' in h }}
+      <div class="btn-group" style="margin-top: 20px;">
+        <a href="{{ h.url_for('hydro_datasets.ds_show', name=dataset.name) }}" class="btn btn-default">
+          <i class="fa fa-arrow-left"></i> {{ _('Cancel') }}
+        </a>
+        <button type="submit" class="btn btn-danger">
+          <i class="fa fa-trash"></i> {{ _('Confirm Delete') }}
+        </button>
+      </div>
+    </form>
+  </div>
+{% endblock %}

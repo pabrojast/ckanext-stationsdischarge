@@ -3,7 +3,6 @@
 import datetime
 import json
 import logging
-import math
 import os
 import time
 import urllib.error
@@ -14,17 +13,11 @@ import re
 
 import ckan.model as model
 import ckan.plugins.toolkit as toolkit
-from ckan.logic import validate as validate_decorator
 
 from ckanext.stationsdischarge import db as station_db
 from ckanext.stationsdischarge.logic.schema import (
     station_create_schema,
     station_update_schema,
-)
-from ckanext.stationsdischarge.validators import (
-    valid_latitude,
-    valid_longitude,
-    valid_uuid,
 )
 
 log = logging.getLogger(__name__)
@@ -54,6 +47,27 @@ def _validate_data(data_dict, schema, context):
     from ckan.lib.navl.dictization_functions import validate
     data, errors = validate(data_dict, schema, context)
     return data, errors
+
+
+def _save_telemetry_keys(station_id, keys_list):
+    """Replace telemetry keys for a station.
+
+    keys_list is a list of dicts with: telemetry_key, label, unit, variable_type, sort_order
+    """
+    station_db.StationTelemetryKey.delete_by_station(station_id)
+    for i, key_data in enumerate(keys_list or []):
+        if not key_data.get("telemetry_key"):
+            continue
+        tk = station_db.StationTelemetryKey()
+        tk.id = str(uuid.uuid4())
+        tk.station_id = station_id
+        tk.telemetry_key = key_data["telemetry_key"]
+        tk.label = key_data.get("label", "")
+        tk.unit = key_data.get("unit", "")
+        tk.variable_type = key_data.get("variable_type", "")
+        tk.sort_order = key_data.get("sort_order", i)
+        tk.save()
+    model.Session.commit()
 
 
 def station_create(context, data_dict):
@@ -118,6 +132,9 @@ def station_create(context, data_dict):
                 {"name": ["A station with this name or ID already exists."]}
             )
         raise
+
+    # Save telemetry keys
+    _save_telemetry_keys(station.id, data_dict.get("telemetry_keys", []))
 
     log.info("stationsdischarge: Created station '%s' (%s)",
              station.title, station.id)
@@ -228,6 +245,10 @@ def station_update(context, data_dict):
             )
         raise
 
+    # Update telemetry keys if provided
+    if "telemetry_keys" in data_dict:
+        _save_telemetry_keys(station.id, data_dict["telemetry_keys"])
+
     log.info("stationsdischarge: Updated station '%s' (%s)",
              station.title, station.id)
 
@@ -250,6 +271,7 @@ def station_delete(context, data_dict):
 
     toolkit.check_access("station_delete", context, data_dict)
 
+    station_db.StationTelemetryKey.delete_by_station(station.id)
     station.delete()
     model.Session.commit()
 
@@ -376,30 +398,22 @@ def _check_station_access(context, station):
     })
 
 
-# ── Rating curve calculation ─────────────────────────
+# ── Time range presets ───────────────────────────────
 
-# Time-range presets with smart aggregation defaults.
-# For ranges > 7 days ThingsBoard agg reduces data volume significantly.
 _TIME_RANGE_PRESETS = {
     "1h":  {"hours": 1,     "limit": 500,  "agg": None,  "interval": None},
     "6h":  {"hours": 6,     "limit": 1000, "agg": None,  "interval": None},
     "24h": {"hours": 24,    "limit": 2000, "agg": None,  "interval": None},
     "7d":  {"hours": 168,   "limit": 5000, "agg": None,  "interval": None},
-    "30d": {"hours": 720,   "limit": 744,  "agg": "AVG", "interval": 3600000},     # hourly avg
-    "90d": {"hours": 2160,  "limit": 720,  "agg": "AVG", "interval": 10800000},    # 3-hour avg
-    "6m":  {"hours": 4380,  "limit": 180,  "agg": "AVG", "interval": 86400000},    # daily avg
-    "1y":  {"hours": 8760,  "limit": 366,  "agg": "AVG", "interval": 86400000},    # daily avg
+    "30d": {"hours": 720,   "limit": 744,  "agg": "AVG", "interval": 3600000},
+    "90d": {"hours": 2160,  "limit": 720,  "agg": "AVG", "interval": 10800000},
+    "6m":  {"hours": 4380,  "limit": 180,  "agg": "AVG", "interval": 86400000},
+    "1y":  {"hours": 8760,  "limit": 366,  "agg": "AVG", "interval": 86400000},
 }
 
 
 def _resolve_time_range(data_dict):
-    """Resolve time_range shortcut into start_ts, end_ts, limit, agg, interval.
-
-    If ``time_range`` is present (e.g. "30d"), it overrides start_ts/end_ts and
-    sets appropriate aggregation defaults.  Explicit agg/interval still wins.
-
-    Returns a dict with keys: start_ts, end_ts, limit, agg, interval.
-    """
+    """Resolve time_range shortcut into start_ts, end_ts, limit, agg, interval."""
     time_range = str(data_dict.get("time_range", "")).strip().lower()
     preset = _TIME_RANGE_PRESETS.get(time_range) if time_range else None
 
@@ -443,116 +457,6 @@ def _resolve_time_range(data_dict):
         "time_range": time_range or None,
     }
 
-def _compute_discharge(h, curve_type, curve_params):
-    """Apply the rating curve to convert water level *h* to discharge *Q*.
-
-    Supported curve types:
-    - **power**: Q = a * (h - h0)^b
-    - **linear_segments**: piecewise Q = slope*h + intercept
-    - **table_interpolation**: linear interpolation on an H-Q table
-    - **piecewise_power**: multiple Q = a*H^b segments with optional
-      raw-value transform (H = offset - raw/divisor)
-
-    Returns Q (float) or None if computation is not possible.
-    """
-    if h is None or curve_params is None:
-        return None
-
-    try:
-        h = float(h)
-    except (ValueError, TypeError):
-        return None
-
-    if curve_type == "power":
-        a = float(curve_params.get("a", 0))
-        b = float(curve_params.get("b", 1))
-        h0 = float(curve_params.get("h0", 0))
-        diff = h - h0
-        if diff < 0:
-            return 0.0
-        try:
-            return round(a * math.pow(diff, b), 4)
-        except (OverflowError, ValueError):
-            return None
-
-    if curve_type == "linear_segments":
-        segments = curve_params.get("segments", [])
-        for seg in segments:
-            h_min = float(seg.get("h_min", 0))
-            h_max = float(seg.get("h_max", float("inf")))
-            if h_min <= h <= h_max:
-                slope = float(seg.get("slope", 0))
-                intercept = float(seg.get("intercept", 0))
-                return round(slope * h + intercept, 4)
-        # Outside all segments — extrapolate from last
-        if segments:
-            seg = segments[-1]
-            slope = float(seg.get("slope", 0))
-            intercept = float(seg.get("intercept", 0))
-            return round(slope * h + intercept, 4)
-        return None
-
-    if curve_type == "table_interpolation":
-        table = curve_params.get("table", [])
-        if not table:
-            return None
-        table = sorted(table, key=lambda p: float(p["h"]))
-        # Below table range
-        if h <= float(table[0]["h"]):
-            return float(table[0]["q"])
-        # Above table range
-        if h >= float(table[-1]["h"]):
-            return float(table[-1]["q"])
-        # Interpolate
-        for i in range(len(table) - 1):
-            h1 = float(table[i]["h"])
-            h2 = float(table[i + 1]["h"])
-            if h1 <= h <= h2:
-                q1 = float(table[i]["q"])
-                q2 = float(table[i + 1]["q"])
-                if h2 == h1:
-                    return q1
-                frac = (h - h1) / (h2 - h1)
-                return round(q1 + frac * (q2 - q1), 4)
-        return None
-
-    if curve_type == "piecewise_power":
-        # Optional transformation: H = offset - raw / divisor
-        if "transform_offset" in curve_params or "transform_divisor" in curve_params:
-            offset = float(curve_params.get("transform_offset", 0))
-            divisor = float(curve_params.get("transform_divisor", 1))
-            if divisor == 0:
-                return None
-            h = offset - h / divisor
-
-        if h <= 0:
-            return 0.0
-
-        segments = curve_params.get("segments", [])
-        if not segments:
-            return None
-
-        # Find matching segment (first where h <= h_max, or last as catch-all)
-        for seg in segments:
-            h_max = seg.get("h_max")
-            if h_max is not None and h <= float(h_max):
-                a = float(seg.get("a", 0))
-                b = float(seg.get("b", 1))
-                try:
-                    return round(a * math.pow(h, b), 4)
-                except (OverflowError, ValueError):
-                    return None
-        # No h_max matched — use last segment as catch-all
-        seg = segments[-1]
-        a = float(seg.get("a", 0))
-        b = float(seg.get("b", 1))
-        try:
-            return round(a * math.pow(h, b), 4)
-        except (OverflowError, ValueError):
-            return None
-
-    return None
-
 
 def _fetch_telemetry(tb_url, tb_api_key, entity_id, keys, start_ts=None,
                      end_ts=None, limit=100, agg=None, interval=None):
@@ -583,16 +487,97 @@ def _fetch_telemetry(tb_url, tb_api_key, entity_id, keys, start_ts=None,
 
 # ── Actions ──────────────────────────────────────────
 
+def station_fetch_tb_metadata(context, data_dict):
+    """Fetch device metadata from ThingsBoard to auto-fill station form.
+
+    :param entity_id: ThingsBoard device UUID (required)
+    :returns: Dict with device info, attributes, and available telemetry keys
+    """
+    toolkit.check_access("station_create", context, data_dict)
+
+    entity_id = data_dict.get("entity_id", "").strip()
+    if not entity_id:
+        raise toolkit.ValidationError({"entity_id": ["Missing value"]})
+
+    tb_url, tb_api_key = _get_tb_config()
+    if not tb_api_key:
+        raise toolkit.ValidationError(
+            {"thingsboard": ["ThingsBoard API key not configured"]}
+        )
+
+    safe_id = urllib.parse.quote(str(entity_id), safe="-")
+
+    # 1. Get device info
+    device_info = {}
+    try:
+        device = _tb_request(tb_url, tb_api_key, "/api/device/%s" % safe_id)
+        device_info = {
+            "name": device.get("name", ""),
+            "label": device.get("label", ""),
+            "type": device.get("type", ""),
+        }
+        additional = device.get("additionalInfo") or {}
+        if additional.get("description"):
+            device_info["description"] = additional["description"]
+        if additional.get("gateway"):
+            device_info["gateway"] = additional["gateway"]
+    except Exception as e:
+        log.warning("TB: Could not fetch device info: %s", e)
+
+    # 2. Get server-scope attributes (lat, lon, etc.)
+    attributes = {}
+    try:
+        attrs = _tb_request(
+            tb_url, tb_api_key,
+            "/api/plugins/telemetry/DEVICE/%s/values/attributes/SERVER_SCOPE" % safe_id
+        )
+        for attr in attrs:
+            attributes[attr.get("key", "")] = attr.get("value")
+    except Exception as e:
+        log.warning("TB: Could not fetch attributes: %s", e)
+
+    # Also try CLIENT_SCOPE and SHARED_SCOPE for lat/lon
+    for scope in ("CLIENT_SCOPE", "SHARED_SCOPE"):
+        try:
+            attrs = _tb_request(
+                tb_url, tb_api_key,
+                "/api/plugins/telemetry/DEVICE/%s/values/attributes/%s" % (safe_id, scope)
+            )
+            for attr in attrs:
+                key = attr.get("key", "")
+                if key not in attributes:
+                    attributes[key] = attr.get("value")
+        except Exception:
+            pass
+
+    # 3. Get available telemetry keys
+    telemetry_keys = []
+    try:
+        keys = _tb_request(
+            tb_url, tb_api_key,
+            "/api/plugins/telemetry/DEVICE/%s/keys/timeseries" % safe_id
+        )
+        if isinstance(keys, list):
+            telemetry_keys = keys
+    except Exception as e:
+        log.warning("TB: Could not fetch telemetry keys: %s", e)
+
+    return {
+        "device": device_info,
+        "attributes": attributes,
+        "telemetry_keys": telemetry_keys,
+    }
+
 def station_telemetry(context, data_dict):
     """Fetch latest telemetry data from ThingsBoard for a station.
 
     :param id: Station UUID or name/slug (required)
-    :param keys: Comma-separated telemetry keys (optional, defaults to station's configured key)
+    :param keys: Comma-separated telemetry keys (optional, defaults to all station keys)
     :param start_ts: Start timestamp in ms (optional, for historical data)
     :param end_ts: End timestamp in ms (optional, for historical data)
-    :param time_range: Shortcut preset: 1h, 6h, 24h, 7d, 30d, 90d, 6m, 1y (optional, overrides start/end)
-    :param agg: ThingsBoard aggregation: AVG, MIN, MAX, SUM, COUNT (optional, auto-set for long ranges)
-    :param interval: Aggregation interval in ms (optional, auto-set for long ranges)
+    :param time_range: Shortcut preset: 1h, 6h, 24h, 7d, 30d, 90d, 6m, 1y
+    :param agg: ThingsBoard aggregation: AVG, MIN, MAX, SUM, COUNT
+    :param interval: Aggregation interval in ms
     :param limit: Max data points (default depends on range)
     :returns: Dict with station info and telemetry data
     """
@@ -611,7 +596,14 @@ def station_telemetry(context, data_dict):
             {"thingsboard_entity_id": ["Station has no ThingsBoard entity configured"]}
         )
 
-    keys = data_dict.get("keys") or station.thingsboard_telemetry_key or "fDistance"
+    keys = data_dict.get("keys")
+    if not keys:
+        keys_list = station_db.StationTelemetryKey.get_by_station(station.id)
+        keys = ",".join(k.telemetry_key for k in keys_list) if keys_list else ""
+    if not keys:
+        raise toolkit.ValidationError(
+            {"telemetry_keys": ["Station has no telemetry keys configured"]}
+        )
 
     tr = _resolve_time_range(data_dict)
 
@@ -628,7 +620,7 @@ def station_telemetry(context, data_dict):
         "station_id": station.station_id,
         "station_name": station.name,
         "thingsboard_entity_id": entity_id,
-        "telemetry_key": keys,
+        "telemetry_keys": keys,
         "telemetry": telemetry_raw,
     }
     if tr["agg"]:
@@ -639,93 +631,6 @@ def station_telemetry(context, data_dict):
 
     return result
 
-
-def station_discharge(context, data_dict):
-    """Fetch telemetry and compute discharge using the station rating curve.
-
-    :param id: Station UUID or name/slug (required)
-    :param keys: Telemetry key for water level (optional, defaults to station config)
-    :param start_ts: Start timestamp in ms (optional)
-    :param end_ts: End timestamp in ms (optional)
-    :param time_range: Shortcut preset: 1h, 6h, 24h, 7d, 30d, 90d, 6m, 1y (optional, overrides start/end)
-    :param agg: ThingsBoard aggregation: AVG, MIN, MAX, SUM, COUNT (optional, auto-set for long ranges)
-    :param interval: Aggregation interval in ms (optional, auto-set for long ranges)
-    :param limit: Max data points (default depends on range)
-    :returns: Dict with raw telemetry, computed discharge, and curve info
-    """
-    station = _resolve_station(data_dict)
-    _check_station_access(context, station)
-
-    tb_url, tb_api_key = _get_tb_config()
-    if not tb_api_key:
-        raise toolkit.ValidationError(
-            {"thingsboard": ["ThingsBoard API key not configured (TB_API_KEY env var)"]}
-        )
-
-    entity_id = station.thingsboard_entity_id
-    if not entity_id:
-        raise toolkit.ValidationError(
-            {"thingsboard_entity_id": ["Station has no ThingsBoard entity configured"]}
-        )
-
-    keys = data_dict.get("keys") or station.thingsboard_telemetry_key or "fDistance"
-
-    tr = _resolve_time_range(data_dict)
-
-    telemetry_raw = _fetch_telemetry(
-        tb_url, tb_api_key, entity_id, keys,
-        start_ts=tr["start_ts"],
-        end_ts=tr["end_ts"],
-        limit=tr["limit"],
-        agg=tr["agg"],
-        interval=tr["interval"],
-    )
-
-    # Parse curve params
-    curve_type = station.curve_type
-    curve_params = None
-    if station.curve_params_json:
-        try:
-            curve_params = json.loads(station.curve_params_json) if isinstance(
-                station.curve_params_json, str) else station.curve_params_json
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-    # Apply rating curve to each telemetry point
-    discharge_series = {}
-    for tel_key, points in telemetry_raw.items():
-        discharge_points = []
-        for point in points:
-            h_val = point.get("value")
-            ts = point.get("ts")
-            q = _compute_discharge(h_val, curve_type, curve_params)
-            discharge_points.append({
-                "ts": ts,
-                "h": float(h_val) if h_val is not None else None,
-                "q": q,
-            })
-        discharge_series[tel_key] = discharge_points
-
-    result = {
-        "station_id": station.station_id,
-        "station_name": station.name,
-        "title": station.title,
-        "unit_level": station.unit_level or "m",
-        "unit_flow": station.unit_flow or "m3/s",
-        "curve_type": curve_type,
-        "curve_params": curve_params,
-        "thingsboard_entity_id": entity_id,
-        "telemetry_key": keys,
-        "telemetry": telemetry_raw,
-        "discharge": discharge_series,
-    }
-    if tr["agg"]:
-        result["aggregation"] = tr["agg"]
-        result["interval_ms"] = tr["interval"]
-    if tr["time_range"]:
-        result["time_range"] = tr["time_range"]
-
-    return result
 
 
 def station_geojson(context, data_dict):
@@ -735,7 +640,7 @@ def station_geojson(context, data_dict):
     :param station_status: Filter by station status (optional)
     :param q: Search query (optional)
     :param include_telemetry: If "true", include latest telemetry value (optional)
-    :param start_ts: Start timestamp in ms — when given with include_telemetry, fetch series (optional)
+    :param start_ts: Start timestamp in ms (optional)
     :param end_ts: End timestamp in ms (optional)
     :param limit: Max telemetry points per station (default 1 without time range, 100 with)
     :returns: GeoJSON FeatureCollection dict
@@ -782,66 +687,40 @@ def station_geojson(context, data_dict):
             "basin_name": station.basin_name,
             "country": station.country,
             "elevation_masl": station.elevation_masl,
-            "observed_variable": station.observed_variable,
-            "unit_level": station.unit_level,
-            "unit_flow": station.unit_flow,
-            "curve_type": station.curve_type,
         }
 
-        # Parse curve for discharge computation
-        curve_params = None
-        if station.curve_params_json and station.curve_type:
-            try:
-                curve_params = json.loads(station.curve_params_json)
-            except (json.JSONDecodeError, TypeError):
-                pass
-
         if include_telemetry and tb_api_key and station.thingsboard_entity_id:
-            tel_key = station.thingsboard_telemetry_key or "fDistance"
-            try:
-                tel = _fetch_telemetry(
-                    tb_url, tb_api_key,
-                    station.thingsboard_entity_id,
-                    tel_key,
-                    start_ts=start_ts if has_time_range else None,
-                    end_ts=end_ts if has_time_range else None,
-                    limit=tel_limit,
-                )
-                for k, v in tel.items():
-                    if v:
-                        # Always include latest value
-                        props["latest_value"] = float(v[0].get("value", 0))
-                        props["latest_ts"] = v[0].get("ts")
-                        props["telemetry_key"] = k
+            # Get all telemetry keys for this station
+            keys_list = station_db.StationTelemetryKey.get_by_station(station.id)
+            tel_keys = ",".join(k.telemetry_key for k in keys_list) if keys_list else ""
 
-                        # Compute discharge for latest value
-                        if curve_params:
-                            q = _compute_discharge(
-                                props["latest_value"],
-                                station.curve_type, curve_params)
-                            if q is not None:
-                                props["latest_discharge"] = q
-
-                        # Include full series when time range given
-                        if has_time_range and len(v) > 1:
-                            series = []
-                            for pt in v:
-                                h_val = float(pt.get("value", 0))
-                                entry = {
-                                    "ts": pt.get("ts"),
-                                    "h": h_val,
-                                }
-                                if curve_params:
-                                    q = _compute_discharge(
-                                        h_val, station.curve_type, curve_params)
-                                    if q is not None:
-                                        entry["q"] = q
-                                series.append(entry)
-                            props["telemetry_series"] = series
-                        break
-            except Exception as e:
-                log.debug("GeoJSON: skipping telemetry for %s: %s",
-                          station.name, e)
+            if tel_keys:
+                try:
+                    tel = _fetch_telemetry(
+                        tb_url, tb_api_key,
+                        station.thingsboard_entity_id,
+                        tel_keys,
+                        start_ts=start_ts if has_time_range else None,
+                        end_ts=end_ts if has_time_range else None,
+                        limit=tel_limit,
+                    )
+                    latest_values = {}
+                    for k, v in tel.items():
+                        if v:
+                            latest_values[k] = {
+                                "value": float(v[0].get("value", 0)),
+                                "ts": v[0].get("ts"),
+                            }
+                            if has_time_range and len(v) > 1:
+                                latest_values[k]["series"] = [
+                                    {"ts": pt.get("ts"), "value": float(pt.get("value", 0))}
+                                    for pt in v
+                                ]
+                    if latest_values:
+                        props["telemetry"] = latest_values
+                except Exception as e:
+                    log.debug("GeoJSON: skipping telemetry for %s: %s",
+                              station.name, e)
 
         feature = {
             "type": "Feature",
@@ -859,48 +738,336 @@ def station_geojson(context, data_dict):
     }
 
 
-def station_discharge_csv(context, data_dict):
-    """Return discharge data formatted for CSV output.
+# ── Dataset Actions ─────────────────────────────────────
 
-    Same params as station_discharge. Returns a dict with 'header' and 'rows'.
+def _save_dataset_stations(dataset_id, station_ids):
+    """Replace all stations for a dataset."""
+    station_db.HydroDatasetStation.delete_by_dataset(dataset_id)
+    for idx, sid in enumerate(station_ids):
+        st = station_db.HydroStation.get(id=sid)
+        if not st:
+            st = station_db.HydroStation.get(name=sid)
+        if st:
+            assoc = station_db.HydroDatasetStation(
+                dataset_id=dataset_id,
+                station_id=st.id,
+                sort_order=idx,
+            )
+            model.Session.add(assoc)
+
+
+def dataset_create(context, data_dict):
+    """Create a new dataset (station group).
+
+    :param title: Dataset title (required)
+    :param name: URL slug (optional, auto-generated from title)
+    :param description: Dataset description
+    :param owner_org: Organization ID
+    :param time_range: Default time range preset (1h, 24h, 7d, etc.)
+    :param agg: Default aggregation (AVG, MIN, MAX)
+    :param interval_ms: Default aggregation interval in ms
+    :param export_format: Preferred export format (geojson, csv)
+    :param station_ids: List of station IDs to include
+    :returns: Dataset dict
     """
-    station = _resolve_station(data_dict)
-    _check_station_access(context, station)
+    toolkit.check_access("dataset_create", context, data_dict)
 
-    # Re-use station_discharge logic
-    discharge_data = station_discharge(context, data_dict)
+    from ckanext.stationsdischarge.logic.schema import dataset_create_schema
+    data, errors = _validate_data(data_dict, dataset_create_schema(), context)
+    if errors:
+        raise toolkit.ValidationError(errors)
 
-    unit_level = discharge_data.get("unit_level", "m")
-    unit_flow = discharge_data.get("unit_flow", "m3/s")
+    if not data.get("name"):
+        data["name"] = _slugify(data["title"])
+        base = data["name"]
+        counter = 1
+        while station_db.HydroDataset.get(name=data["name"]):
+            data["name"] = f"{base}-{counter}"
+            counter += 1
 
-    header = ["timestamp_ms", "datetime_utc",
-              "water_level_%s" % unit_level,
-              "discharge_%s" % unit_flow]
-    rows = []
+    user_obj = model.User.get(context.get("user"))
 
-    for _tel_key, points in discharge_data.get("discharge", {}).items():
-        for pt in points:
-            ts = pt.get("ts")
-            h = pt.get("h")
-            q = pt.get("q")
-            dt_str = ""
-            if ts:
-                try:
-                    dt = datetime.datetime.utcfromtimestamp(int(ts) / 1000.0)
-                    dt_str = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-                except (ValueError, TypeError, OSError):
-                    pass
-            rows.append([
-                str(ts or ""),
-                dt_str,
-                str(h) if h is not None else "",
-                str(q) if q is not None else "",
-            ])
+    ds = station_db.HydroDataset(
+        title=data["title"],
+        name=data["name"],
+        description=data.get("description", ""),
+        owner_org=data.get("owner_org", ""),
+        time_range=data.get("time_range", "24h"),
+        agg=data.get("agg", ""),
+        interval_ms=data.get("interval_ms"),
+        export_format=data.get("export_format", "geojson"),
+        user_id=user_obj.id if user_obj else None,
+    )
+    model.Session.add(ds)
+    model.Session.flush()
+
+    station_ids = data_dict.get("station_ids") or []
+    if isinstance(station_ids, str):
+        station_ids = [s.strip() for s in station_ids.split(",") if s.strip()]
+    _save_dataset_stations(ds.id, station_ids)
+
+    model.Session.commit()
+    return ds.as_dict()
+
+
+def dataset_show(context, data_dict):
+    """Show a dataset by ID or name.
+
+    :param id: Dataset UUID or name/slug (required)
+    :returns: Dataset dict with stations
+    """
+    ds_id = data_dict.get("id") or data_dict.get("name")
+    if not ds_id:
+        raise toolkit.ValidationError({"id": ["Missing value"]})
+
+    ds = station_db.HydroDataset.get(id=ds_id)
+    if not ds:
+        ds = station_db.HydroDataset.get(name=ds_id)
+    if not ds:
+        raise toolkit.ObjectNotFound("Dataset not found")
+
+    toolkit.check_access("dataset_show", context, data_dict)
+
+    result = ds.as_dict()
+    # Enrich stations with full data
+    assocs = station_db.HydroDatasetStation.get_by_dataset(ds.id)
+    stations = []
+    for assoc in assocs:
+        st = station_db.HydroStation.get(id=assoc.station_id)
+        if st:
+            stations.append(st.as_dict())
+    result["stations_detail"] = stations
+    return result
+
+
+def dataset_update(context, data_dict):
+    """Update an existing dataset.
+
+    :param id: Dataset UUID (required)
+    :param station_ids: Updated list of station IDs
+    :returns: Updated dataset dict
+    """
+    ds_id = data_dict.get("id")
+    if not ds_id:
+        raise toolkit.ValidationError({"id": ["Missing value"]})
+
+    ds = station_db.HydroDataset.get(id=ds_id)
+    if not ds:
+        ds = station_db.HydroDataset.get(name=ds_id)
+    if not ds:
+        raise toolkit.ObjectNotFound("Dataset not found")
+
+    toolkit.check_access("dataset_update", context, {"id": ds.id})
+
+    from ckanext.stationsdischarge.logic.schema import dataset_update_schema
+    ctx = dict(context, dataset_id=ds.id)
+    data, errors = _validate_data(data_dict, dataset_update_schema(), ctx)
+    if errors:
+        raise toolkit.ValidationError(errors)
+
+    updatable = ("title", "name", "description", "owner_org",
+                 "time_range", "agg", "interval_ms", "export_format")
+    for field in updatable:
+        if field in data and data[field] is not None:
+            setattr(ds, field, data[field])
+
+    ds.modified = datetime.datetime.utcnow()
+
+    if "station_ids" in data_dict:
+        station_ids = data_dict["station_ids"]
+        if isinstance(station_ids, str):
+            station_ids = [s.strip() for s in station_ids.split(",") if s.strip()]
+        _save_dataset_stations(ds.id, station_ids)
+
+    model.Session.commit()
+    return ds.as_dict()
+
+
+def dataset_delete(context, data_dict):
+    """Delete a dataset.
+
+    :param id: Dataset UUID (required)
+    """
+    ds_id = data_dict.get("id")
+    if not ds_id:
+        raise toolkit.ValidationError({"id": ["Missing value"]})
+
+    ds = station_db.HydroDataset.get(id=ds_id)
+    if not ds:
+        ds = station_db.HydroDataset.get(name=ds_id)
+    if not ds:
+        raise toolkit.ObjectNotFound("Dataset not found")
+
+    toolkit.check_access("dataset_delete", context, {"id": ds.id})
+
+    station_db.HydroDatasetStation.delete_by_dataset(ds.id)
+    model.Session.delete(ds)
+    model.Session.commit()
+    return {"success": True}
+
+
+def dataset_list(context, data_dict):
+    """List datasets with optional filtering.
+
+    :param owner_org: Filter by organization (optional)
+    :param q: Search query (optional)
+    :param limit: Max results (default 100)
+    :param offset: Offset for pagination (default 0)
+    :returns: Dict with results and count
+    """
+    toolkit.check_access("dataset_list", context, data_dict)
+
+    try:
+        limit = int(data_dict.get("limit", 100))
+    except (ValueError, TypeError):
+        limit = 100
+    try:
+        offset = int(data_dict.get("offset", 0))
+    except (ValueError, TypeError):
+        offset = 0
+
+    results, total = station_db.HydroDataset.list_datasets(
+        owner_org=data_dict.get("owner_org"),
+        q=data_dict.get("q"),
+        limit=limit,
+        offset=offset,
+    )
 
     return {
-        "station_name": station.name,
-        "station_id": station.station_id,
-        "title": station.title,
-        "header": header,
-        "rows": rows,
+        "count": total,
+        "results": [ds.as_dict() for ds in results],
+    }
+
+
+def dataset_geojson(context, data_dict):
+    """Return a dataset's stations as a GeoJSON FeatureCollection.
+
+    :param id: Dataset UUID or name (required)
+    :param include_telemetry: Include latest telemetry (optional)
+    :returns: GeoJSON FeatureCollection
+    """
+    ds_data = dataset_show(context, data_dict)
+    toolkit.check_access("dataset_geojson", context, data_dict)
+
+    include_telemetry = str(data_dict.get("include_telemetry", "")).lower() == "true"
+    tb_url, tb_api_key = None, None
+    if include_telemetry:
+        tb_url, tb_api_key = _get_tb_config()
+
+    features = []
+    for station_dict in ds_data.get("stations_detail", []):
+        lat = station_dict.get("latitude")
+        lon = station_dict.get("longitude")
+        if lat is None or lon is None:
+            continue
+
+        props = {
+            "id": station_dict["id"],
+            "title": station_dict["title"],
+            "name": station_dict["name"],
+            "station_id": station_dict["station_id"],
+            "station_status": station_dict.get("station_status"),
+            "river_name": station_dict.get("river_name"),
+            "basin_name": station_dict.get("basin_name"),
+            "country": station_dict.get("country"),
+            "elevation_masl": station_dict.get("elevation_masl"),
+        }
+
+        if include_telemetry and tb_api_key:
+            entity_id = station_dict.get("thingsboard_entity_id")
+            keys_list = station_dict.get("telemetry_keys", [])
+            tel_keys = ",".join(k["telemetry_key"] for k in keys_list)
+            if entity_id and tel_keys:
+                try:
+                    tel = _fetch_telemetry(tb_url, tb_api_key, entity_id, tel_keys, limit=1)
+                    latest = {}
+                    for k, v in tel.items():
+                        if v:
+                            latest[k] = {"value": float(v[0].get("value", 0)), "ts": v[0].get("ts")}
+                    if latest:
+                        props["telemetry"] = latest
+                except Exception as e:
+                    log.debug("Dataset GeoJSON: skipping telemetry for %s: %s",
+                              station_dict.get("name"), e)
+
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [float(lon), float(lat)]},
+            "properties": props,
+        })
+
+    return {
+        "type": "FeatureCollection",
+        "features": features,
+        "dataset": {
+            "id": ds_data["id"],
+            "title": ds_data["title"],
+            "name": ds_data["name"],
+        },
+    }
+
+
+def dataset_csv(context, data_dict):
+    """Return a dataset's stations as CSV data.
+
+    :param id: Dataset UUID or name (required)
+    :param include_telemetry: Include latest telemetry (optional)
+    :returns: Dict with csv_content string
+    """
+    ds_data = dataset_show(context, data_dict)
+    toolkit.check_access("dataset_csv", context, data_dict)
+
+    include_telemetry = str(data_dict.get("include_telemetry", "")).lower() == "true"
+    tb_url, tb_api_key = None, None
+    if include_telemetry:
+        tb_url, tb_api_key = _get_tb_config()
+
+    import csv
+    import io
+    output = io.StringIO()
+
+    base_headers = [
+        "station_id", "title", "name", "latitude", "longitude",
+        "station_status", "river_name", "basin_name", "country",
+        "elevation_masl",
+    ]
+
+    all_tel_keys = set()
+    stations_with_tel = []
+    for station_dict in ds_data.get("stations_detail", []):
+        tel_data = {}
+        if include_telemetry and tb_api_key:
+            entity_id = station_dict.get("thingsboard_entity_id")
+            keys_list = station_dict.get("telemetry_keys", [])
+            tel_keys = ",".join(k["telemetry_key"] for k in keys_list)
+            if entity_id and tel_keys:
+                try:
+                    tel = _fetch_telemetry(tb_url, tb_api_key, entity_id, tel_keys, limit=1)
+                    for k, v in tel.items():
+                        if v:
+                            tel_data[k] = v[0].get("value", "")
+                            all_tel_keys.add(k)
+                except Exception:
+                    pass
+        stations_with_tel.append((station_dict, tel_data))
+
+    tel_headers = sorted(all_tel_keys)
+    headers = base_headers + tel_headers
+
+    writer = csv.writer(output)
+    writer.writerow(headers)
+
+    for station_dict, tel_data in stations_with_tel:
+        row = [station_dict.get(h, "") for h in base_headers]
+        for tk in tel_headers:
+            row.append(tel_data.get(tk, ""))
+        writer.writerow(row)
+
+    return {
+        "csv_content": output.getvalue(),
+        "dataset": {
+            "id": ds_data["id"],
+            "title": ds_data["title"],
+            "name": ds_data["name"],
+        },
     }
