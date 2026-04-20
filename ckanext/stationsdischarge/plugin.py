@@ -54,8 +54,8 @@ class StationsDischargePlugin(plugins.SingletonPlugin):
     # ── IBlueprint ──────────────────────────────────
 
     def get_blueprint(self):
-        from ckanext.stationsdischarge.blueprint import hydro_stations
-        return [hydro_stations]
+        from ckanext.stationsdischarge.blueprint import hydro_stations, hydro_datasets
+        return [hydro_stations, hydro_datasets]
 
     # ── IActions ────────────────────────────────────
 
@@ -68,9 +68,15 @@ class StationsDischargePlugin(plugins.SingletonPlugin):
             "station_delete": actions.station_delete,
             "station_list": actions.station_list,
             "station_telemetry": actions.station_telemetry,
-            "station_discharge": actions.station_discharge,
             "station_geojson": actions.station_geojson,
-            "station_discharge_csv": actions.station_discharge_csv,
+            "station_fetch_tb_metadata": actions.station_fetch_tb_metadata,
+            "dataset_create": actions.dataset_create,
+            "dataset_show": actions.dataset_show,
+            "dataset_update": actions.dataset_update,
+            "dataset_delete": actions.dataset_delete,
+            "dataset_list": actions.dataset_list,
+            "dataset_geojson": actions.dataset_geojson,
+            "dataset_csv": actions.dataset_csv,
         }
 
     # ── IAuthFunctions ──────────────────────────────
@@ -84,9 +90,15 @@ class StationsDischargePlugin(plugins.SingletonPlugin):
             "station_delete": auth.station_delete,
             "station_list": auth.station_list,
             "station_telemetry": auth.station_telemetry,
-            "station_discharge": auth.station_discharge,
             "station_geojson": auth.station_geojson,
-            "station_discharge_csv": auth.station_discharge_csv,
+            "station_fetch_tb_metadata": auth.station_create,
+            "dataset_create": auth.dataset_create,
+            "dataset_show": auth.dataset_show,
+            "dataset_update": auth.dataset_update,
+            "dataset_delete": auth.dataset_delete,
+            "dataset_list": auth.dataset_list,
+            "dataset_geojson": auth.dataset_geojson,
+            "dataset_csv": auth.dataset_csv,
         }
 
     # ── ITemplateHelpers ────────────────────────────

@@ -9,10 +9,6 @@ ignore_missing = toolkit.get_validator("ignore_missing")
 unicode_safe = toolkit.get_validator("unicode_safe")
 boolean_validator = toolkit.get_validator("boolean_validator")
 
-from ckanext.stationsdischarge.validators import (
-    valid_curve_params_json,
-)
-
 
 def _navl_valid_latitude(key, data, errors, context):
     """Navl-compatible latitude validator."""
@@ -116,19 +112,8 @@ def station_create_schema():
         "country": [ignore_missing, unicode_safe],
         "elevation_masl": [ignore_missing],
         # IoT
-        "thingsboard_entity_id": [not_empty, unicode_safe, _navl_valid_uuid],
+        "thingsboard_entity_id": [ignore_missing, unicode_safe, _navl_valid_uuid],
         "thingsboard_device_id": [ignore_missing, unicode_safe],
-        "thingsboard_telemetry_key": [not_empty, unicode_safe],
-        "observed_variable": [not_empty, unicode_safe],
-        # Units
-        "unit_level": [not_empty, unicode_safe],
-        "unit_flow": [not_empty, unicode_safe],
-        # Rating curve
-        "curve_type": [not_empty, unicode_safe],
-        "curve_params_json": [not_empty, unicode_safe, valid_curve_params_json],
-        "curve_valid_from": [ignore_missing, unicode_safe],
-        "curve_valid_to": [ignore_missing, unicode_safe],
-        "curve_notes": [ignore_missing, unicode_safe],
         # Workflow
         "submission_status": [ignore_missing, unicode_safe],
     }
@@ -137,11 +122,44 @@ def station_create_schema():
 def station_update_schema():
     schema = station_create_schema()
     schema["id"] = [not_empty, unicode_safe]
-    # On update, make fields optional but keep their validators
     for field in ("title", "name", "station_id", "owner_org",
-                  "station_status", "latitude", "longitude",
-                  "thingsboard_entity_id", "thingsboard_telemetry_key",
-                  "observed_variable", "unit_level", "unit_flow",
-                  "curve_type", "curve_params_json"):
+                  "station_status", "latitude", "longitude"):
+        schema[field] = [ignore_missing] + schema[field]
+    return schema
+
+
+# ── Dataset schemas ──
+
+def _navl_dataset_name_validator(key, data, errors, context):
+    """Ensure dataset name (URL slug) is unique."""
+    value = data.get(key)
+    if not value:
+        return
+    from ckanext.stationsdischarge import db as _db
+    existing = _db.HydroDataset.get(name=value)
+    if existing:
+        dataset_id = context.get("dataset_id")
+        if not dataset_id or existing.id != dataset_id:
+            errors[key].append(f"A dataset with URL '{value}' already exists.")
+            raise StopOnError
+
+
+def dataset_create_schema():
+    return {
+        "title": [not_empty, unicode_safe],
+        "name": [not_empty, unicode_safe, _navl_dataset_name_validator],
+        "description": [ignore_missing, unicode_safe],
+        "owner_org": [ignore_missing, unicode_safe],
+        "time_range": [ignore_missing, unicode_safe],
+        "agg": [ignore_missing, unicode_safe],
+        "interval_ms": [ignore_missing],
+        "export_format": [ignore_missing, unicode_safe],
+    }
+
+
+def dataset_update_schema():
+    schema = dataset_create_schema()
+    schema["id"] = [not_empty, unicode_safe]
+    for field in ("title", "name"):
         schema[field] = [ignore_missing] + schema[field]
     return schema

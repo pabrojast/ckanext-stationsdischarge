@@ -1,0 +1,89 @@
+{% extends "stationsdischarge/base.html" %}
+
+{% block subtitle %}{{ _('Station Datasets') }}{% endblock %}
+
+{% block primary_content_inner %}
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+    <h1><i class="fa fa-folder-open"></i> {{ _('Station Datasets') }}</h1>
+    {% if h.check_access('dataset_create') %}
+      <a href="{{ h.url_for('hydro_datasets.ds_new') }}" class="btn btn-primary">
+        <i class="fa fa-plus"></i> {{ _('New Dataset') }}
+      </a>
+    {% endif %}
+  </div>
+
+  {# Search bar #}
+  <form method="get" action="{{ h.url_for('hydro_datasets.ds_index') }}" class="form-inline" style="margin-bottom:20px;">
+    <div class="input-group" style="max-width:400px;">
+      <input type="text" name="q" class="form-control" placeholder="{{ _('Search datasets...') }}"
+             value="{{ q }}" />
+      <span class="input-group-btn">
+        <button class="btn btn-default" type="submit"><i class="fa fa-search"></i></button>
+      </span>
+    </div>
+  </form>
+
+  {% if datasets %}
+    <table class="table table-striped">
+      <thead>
+        <tr>
+          <th>{{ _('Title') }}</th>
+          <th>{{ _('Stations') }}</th>
+          <th>{{ _('Format') }}</th>
+          <th>{{ _('Time Range') }}</th>
+          <th>{{ _('Modified') }}</th>
+          <th>{{ _('Actions') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ds in datasets %}
+        <tr>
+          <td>
+            <a href="{{ h.url_for('hydro_datasets.ds_show', name=ds.name) }}">
+              <strong>{{ ds.title }}</strong>
+            </a>
+            {% if ds.description %}
+              <br><small class="text-muted">{{ ds.description[:80] }}{% if ds.description|length > 80 %}...{% endif %}</small>
+            {% endif %}
+          </td>
+          <td><span class="badge">{{ ds.stations|length }}</span></td>
+          <td>{{ ds.export_format or 'geojson' }}</td>
+          <td>{{ ds.time_range or '24h' }}</td>
+          <td>{{ ds.modified[:10] if ds.modified else '—' }}</td>
+          <td>
+            <a href="{{ h.url_for('hydro_datasets.ds_geojson', name=ds.name) }}" class="btn btn-xs btn-default"
+               target="_blank" title="{{ _('GeoJSON') }}">
+              <i class="fa fa-globe"></i>
+            </a>
+            <a href="{{ h.url_for('hydro_datasets.ds_csv', name=ds.name) }}" class="btn btn-xs btn-default"
+               title="{{ _('CSV') }}">
+              <i class="fa fa-download"></i>
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <p class="text-muted">{{ _('Showing') }} {{ datasets|length }} {{ _('of') }} {{ count }} {{ _('datasets') }}</p>
+  {% else %}
+    <div class="station-empty-state">
+      <i class="fa fa-folder-open"></i>
+      <p>{{ _('No datasets found.') }}</p>
+      {% if h.check_access('dataset_create') %}
+        <a href="{{ h.url_for('hydro_datasets.ds_new') }}" class="btn btn-primary">
+          <i class="fa fa-plus"></i> {{ _('Create your first dataset') }}
+        </a>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block secondary_content %}
+  <div class="module module-narrow module-shallow">
+    <h2 class="module-heading">
+      <i class="fa fa-arrow-left"></i>
+      <a href="{{ h.url_for('hydro_stations.index') }}">{{ _('Back to Stations') }}</a>
+    </h2>
+  </div>
+{% endblock %}

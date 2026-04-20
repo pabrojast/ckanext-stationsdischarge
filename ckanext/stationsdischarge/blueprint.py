@@ -93,6 +93,9 @@ def new():
     if toolkit.request.method == "POST":
         data = dict(toolkit.request.form)
 
+        # Parse telemetry keys from form
+        data["telemetry_keys"] = _parse_telemetry_keys_from_form(toolkit.request.form)
+
         # Handle submission action
         submission_action = data.pop("submission_action", "draft")
         data["submission_status"] = "draft"
@@ -228,6 +231,9 @@ def edit(name):
         data = dict(toolkit.request.form)
         data["id"] = station["id"]
 
+        # Parse telemetry keys from form
+        data["telemetry_keys"] = _parse_telemetry_keys_from_form(toolkit.request.form)
+
         # Handle submission action
         submission_action = data.pop("submission_action", None)
         if submission_action:
@@ -285,56 +291,6 @@ def delete(name):
     return toolkit.render("stationsdischarge/confirm_delete.html", extra_vars=extra_vars)
 
 
-# ── DISCHARGE ────────────────────────────────────────
-
-@hydro_stations.route("/<name>/discharge", methods=["GET"])
-def discharge(name):
-    """Return telemetry data with rating curve discharge for a station.
-
-    Query params: keys, start_ts, end_ts, time_range, agg, interval, limit
-    """
-    context = _get_context()
-    data_dict = {
-        "id": name,
-        "keys": toolkit.request.args.get("keys", ""),
-        "start_ts": toolkit.request.args.get("start_ts", ""),
-        "end_ts": toolkit.request.args.get("end_ts", ""),
-        "time_range": toolkit.request.args.get("time_range", ""),
-        "agg": toolkit.request.args.get("agg", ""),
-        "interval": toolkit.request.args.get("interval", ""),
-        "limit": toolkit.request.args.get("limit", ""),
-    }
-
-    try:
-        result = toolkit.get_action("station_discharge")(context, data_dict)
-    except toolkit.ObjectNotFound:
-        return Response(
-            json.dumps({"error": "Station not found"}),
-            status=404, mimetype="application/json",
-        )
-    except toolkit.NotAuthorized:
-        return Response(
-            json.dumps({"error": "Not authorized"}),
-            status=403, mimetype="application/json",
-        )
-    except toolkit.ValidationError as e:
-        return Response(
-            json.dumps({"error": e.error_dict}),
-            status=400, mimetype="application/json",
-        )
-    except Exception as e:
-        log.error("Error computing discharge for %s: %s", name, e)
-        return Response(
-            json.dumps({"error": str(e)}),
-            status=500, mimetype="application/json",
-        )
-
-    return Response(
-        json.dumps(result, ensure_ascii=False),
-        mimetype="application/json",
-        headers={"Access-Control-Allow-Origin": "*"},
-    )
-
 
 # ── TELEMETRY (GET) ──────────────────────────────────
 
@@ -387,61 +343,6 @@ def telemetry(name):
     )
 
 
-# ── CSV EXPORT ───────────────────────────────────────
-
-@hydro_stations.route("/<name>/discharge.csv", methods=["GET"])
-def discharge_csv(name):
-    """Return discharge data as CSV download.
-
-    Query params: keys, start_ts, end_ts, time_range, agg, interval, limit
-    """
-    context = _get_context()
-    data_dict = {
-        "id": name,
-        "keys": toolkit.request.args.get("keys", ""),
-        "start_ts": toolkit.request.args.get("start_ts", ""),
-        "end_ts": toolkit.request.args.get("end_ts", ""),
-        "time_range": toolkit.request.args.get("time_range", ""),
-        "agg": toolkit.request.args.get("agg", ""),
-        "interval": toolkit.request.args.get("interval", ""),
-        "limit": toolkit.request.args.get("limit", ""),
-    }
-
-    try:
-        result = toolkit.get_action("station_discharge_csv")(context, data_dict)
-    except toolkit.ObjectNotFound:
-        return Response("Station not found", status=404, mimetype="text/plain")
-    except toolkit.NotAuthorized:
-        return Response("Not authorized", status=403, mimetype="text/plain")
-    except toolkit.ValidationError as e:
-        return Response(
-            json.dumps({"error": e.error_dict}),
-            status=400, mimetype="application/json",
-        )
-    except Exception as e:
-        log.error("Error generating CSV for %s: %s", name, e)
-        return Response("Internal error", status=500, mimetype="text/plain")
-
-    import io
-    import csv
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(result["header"])
-    for row in result["rows"]:
-        writer.writerow(row)
-
-    csv_content = output.getvalue()
-    filename = re.sub(r'[^\w\-.]', '_', result.get("station_name", name)) + "_discharge.csv"
-
-    return Response(
-        csv_content,
-        mimetype="text/csv",
-        headers={
-            "Content-Disposition": 'attachment; filename="%s"' % filename,
-            "Access-Control-Allow-Origin": "*",
-        },
-    )
-
 
 # ── DASHBOARD ────────────────────────────────────────
 
@@ -469,10 +370,8 @@ def dashboard(name):
     extra_vars = {
         "station": station,
         "org": org,
-        "discharge_url": toolkit.url_for(
-            "hydro_stations.discharge", name=station["name"]),
-        "csv_url": toolkit.url_for(
-            "hydro_stations.discharge_csv", name=station["name"]),
+        "telemetry_url": toolkit.url_for(
+            "hydro_stations.telemetry", name=station["name"]),
         "geojson_url": toolkit.url_for("hydro_stations.geojson"),
     }
     return toolkit.render("stationsdischarge/dashboard.html", extra_vars=extra_vars)
@@ -489,3 +388,332 @@ def _format_error_summary(errors):
         else:
             summary[field] = str(msgs)
     return summary
+
+
+def _parse_telemetry_keys_from_form(form):
+    """Parse telemetry keys from form data.
+
+    Form fields are indexed: tk_key_0, tk_label_0, tk_unit_0, tk_variable_type_0, ...
+    """
+    keys = []
+    i = 0
+    while True:
+        key = form.get(f"tk_key_{i}")
+        if key is None:
+            break
+        if key.strip():
+            keys.append({
+                "telemetry_key": key.strip(),
+                "label": form.get(f"tk_label_{i}", "").strip(),
+                "unit": form.get(f"tk_unit_{i}", "").strip(),
+                "variable_type": form.get(f"tk_variable_type_{i}", "").strip(),
+                "sort_order": i,
+            })
+        i += 1
+    return keys
+
+
+# ── THINGSBOARD METADATA FETCH ──────────────────────
+
+@hydro_stations.route("/fetch-tb-metadata", methods=["POST"])
+def fetch_tb_metadata():
+    """AJAX endpoint to fetch device metadata from ThingsBoard."""
+    context = _get_context()
+
+    try:
+        toolkit.check_access("station_create", context, {})
+    except toolkit.NotAuthorized:
+        return Response(
+            json.dumps({"error": "Not authorized"}),
+            status=403, mimetype="application/json",
+        )
+
+    entity_id = toolkit.request.form.get("entity_id", "").strip()
+    if not entity_id:
+        return Response(
+            json.dumps({"error": "entity_id is required"}),
+            status=400, mimetype="application/json",
+        )
+
+    try:
+        result = toolkit.get_action("station_fetch_tb_metadata")(
+            context, {"entity_id": entity_id}
+        )
+    except toolkit.ValidationError as e:
+        return Response(
+            json.dumps({"error": e.error_dict}),
+            status=400, mimetype="application/json",
+        )
+    except Exception as e:
+        log.error("Error fetching TB metadata: %s", e)
+        return Response(
+            json.dumps({"error": str(e)}),
+            status=500, mimetype="application/json",
+        )
+
+    return Response(
+        json.dumps(result, ensure_ascii=False),
+        mimetype="application/json",
+    )
+
+
+# ══════════════════════════════════════════════════════════
+# ── DATASET BLUEPRINT ────────────────────────────────────
+# ══════════════════════════════════════════════════════════
+
+hydro_datasets = Blueprint(
+    "hydro_datasets",
+    __name__,
+    url_prefix="/hydro-dataset",
+    template_folder="templates",
+)
+
+
+# ── LIST ─────────────────────────────────────────────
+
+@hydro_datasets.route("/", methods=["GET"])
+def ds_index():
+    context = _get_context()
+    try:
+        data_dict = {
+            "q": toolkit.request.args.get("q", ""),
+            "owner_org": toolkit.request.args.get("owner_org", ""),
+            "limit": toolkit.request.args.get("limit", "50"),
+            "offset": toolkit.request.args.get("offset", "0"),
+        }
+        result = toolkit.get_action("dataset_list")(context, data_dict)
+    except toolkit.NotAuthorized:
+        toolkit.abort(403, "Not authorized")
+    except Exception as e:
+        log.error("Error listing datasets: %s", e)
+        result = {"results": [], "count": 0}
+
+    extra_vars = {
+        "datasets": result["results"],
+        "count": result["count"],
+        "q": data_dict["q"],
+        "organizations": _get_organizations(),
+    }
+    return toolkit.render("stationsdischarge/dataset_index.html", extra_vars=extra_vars)
+
+
+# ── NEW / CREATE ─────────────────────────────────────
+
+@hydro_datasets.route("/new", methods=["GET", "POST"])
+def ds_new():
+    context = _get_context()
+
+    try:
+        toolkit.check_access("dataset_create", context, {})
+    except toolkit.NotAuthorized:
+        toolkit.abort(403, "Not authorized to create datasets")
+
+    errors = {}
+    error_summary = {}
+    data = {}
+
+    if toolkit.request.method == "POST":
+        data = dict(toolkit.request.form)
+        data["station_ids"] = toolkit.request.form.getlist("station_ids")
+
+        try:
+            ds = toolkit.get_action("dataset_create")(context, data)
+            h.flash_success("Dataset created successfully.")
+            return h.redirect_to("hydro_datasets.ds_show", name=ds["name"])
+        except toolkit.ValidationError as e:
+            errors = e.error_dict or {}
+            error_summary = _format_error_summary(errors)
+        except toolkit.NotAuthorized:
+            toolkit.abort(403, "Not authorized")
+
+    # Get all stations for the picker
+    all_stations = _get_all_stations()
+
+    extra_vars = {
+        "data": data,
+        "errors": errors,
+        "error_summary": error_summary,
+        "organizations": _get_organizations(),
+        "all_stations": all_stations,
+        "form_action": toolkit.url_for("hydro_datasets.ds_new"),
+        "is_edit": False,
+    }
+    return toolkit.render("stationsdischarge/dataset_edit_base.html", extra_vars=extra_vars)
+
+
+# ── SHOW ─────────────────────────────────────────────
+
+@hydro_datasets.route("/<name>", methods=["GET"])
+def ds_show(name):
+    context = _get_context()
+
+    try:
+        ds = toolkit.get_action("dataset_show")(context, {"id": name})
+    except toolkit.ObjectNotFound:
+        toolkit.abort(404, "Dataset not found")
+    except toolkit.NotAuthorized:
+        toolkit.abort(403, "Not authorized to view this dataset")
+
+    extra_vars = {
+        "dataset": ds,
+        "geojson_url": toolkit.url_for("hydro_datasets.ds_geojson", name=ds["name"]),
+        "csv_url": toolkit.url_for("hydro_datasets.ds_csv", name=ds["name"]),
+    }
+    return toolkit.render("stationsdischarge/dataset_read.html", extra_vars=extra_vars)
+
+
+# ── EDIT / UPDATE ────────────────────────────────────
+
+@hydro_datasets.route("/<name>/edit", methods=["GET", "POST"])
+def ds_edit(name):
+    context = _get_context()
+
+    try:
+        ds = toolkit.get_action("dataset_show")(context, {"id": name})
+    except toolkit.ObjectNotFound:
+        toolkit.abort(404, "Dataset not found")
+    except toolkit.NotAuthorized:
+        toolkit.abort(403, "Not authorized")
+
+    try:
+        toolkit.check_access("dataset_update", context, {"id": ds["id"]})
+    except toolkit.NotAuthorized:
+        toolkit.abort(403, "Not authorized to edit this dataset")
+
+    errors = {}
+    error_summary = {}
+    data = ds
+
+    if toolkit.request.method == "POST":
+        data = dict(toolkit.request.form)
+        data["id"] = ds["id"]
+        data["station_ids"] = toolkit.request.form.getlist("station_ids")
+
+        try:
+            updated = toolkit.get_action("dataset_update")(context, data)
+            h.flash_success("Dataset updated successfully.")
+            return h.redirect_to("hydro_datasets.ds_show", name=updated["name"])
+        except toolkit.ValidationError as e:
+            errors = e.error_dict or {}
+            error_summary = _format_error_summary(errors)
+        except toolkit.NotAuthorized:
+            toolkit.abort(403, "Not authorized")
+
+    all_stations = _get_all_stations()
+
+    extra_vars = {
+        "data": data,
+        "errors": errors,
+        "error_summary": error_summary,
+        "organizations": _get_organizations(),
+        "all_stations": all_stations,
+        "form_action": toolkit.url_for("hydro_datasets.ds_edit", name=name),
+        "is_edit": True,
+    }
+    return toolkit.render("stationsdischarge/dataset_edit_base.html", extra_vars=extra_vars)
+
+
+# ── DELETE ───────────────────────────────────────────
+
+@hydro_datasets.route("/<name>/delete", methods=["GET", "POST"])
+def ds_delete(name):
+    context = _get_context()
+
+    try:
+        ds = toolkit.get_action("dataset_show")(context, {"id": name})
+    except toolkit.ObjectNotFound:
+        toolkit.abort(404, "Dataset not found")
+    except toolkit.NotAuthorized:
+        toolkit.abort(403, "Not authorized")
+
+    try:
+        toolkit.check_access("dataset_delete", context, {"id": ds["id"]})
+    except toolkit.NotAuthorized:
+        toolkit.abort(403, "Not authorized to delete this dataset")
+
+    if toolkit.request.method == "POST":
+        try:
+            toolkit.get_action("dataset_delete")(context, {"id": ds["id"]})
+            h.flash_success(f"Dataset '{ds['title']}' deleted.")
+            return h.redirect_to("hydro_datasets.ds_index")
+        except Exception as e:
+            h.flash_error(f"Error deleting dataset: {e}")
+            return h.redirect_to("hydro_datasets.ds_show", name=name)
+
+    extra_vars = {"dataset": ds}
+    return toolkit.render("stationsdischarge/dataset_confirm_delete.html", extra_vars=extra_vars)
+
+
+# ── GEOJSON ──────────────────────────────────────────
+
+@hydro_datasets.route("/<name>/geojson", methods=["GET"])
+def ds_geojson(name):
+    context = _get_context()
+    data_dict = {
+        "id": name,
+        "include_telemetry": toolkit.request.args.get("include_telemetry", ""),
+    }
+
+    try:
+        result = toolkit.get_action("dataset_geojson")(context, data_dict)
+    except toolkit.ObjectNotFound:
+        return Response(json.dumps({"error": "Dataset not found"}),
+                        status=404, mimetype="application/json")
+    except Exception as e:
+        log.error("Error generating dataset GeoJSON: %s", e)
+        return Response(json.dumps({"error": str(e)}),
+                        status=500, mimetype="application/json")
+
+    return Response(
+        json.dumps(result, ensure_ascii=False),
+        mimetype="application/geo+json",
+        headers={
+            "Content-Disposition": f"inline; filename=dataset_{name}.geojson",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
+# ── CSV ──────────────────────────────────────────────
+
+@hydro_datasets.route("/<name>/csv", methods=["GET"])
+def ds_csv(name):
+    context = _get_context()
+    data_dict = {
+        "id": name,
+        "include_telemetry": toolkit.request.args.get("include_telemetry", ""),
+    }
+
+    try:
+        result = toolkit.get_action("dataset_csv")(context, data_dict)
+    except toolkit.ObjectNotFound:
+        return Response(json.dumps({"error": "Dataset not found"}),
+                        status=404, mimetype="application/json")
+    except Exception as e:
+        log.error("Error generating dataset CSV: %s", e)
+        return Response(json.dumps({"error": str(e)}),
+                        status=500, mimetype="application/json")
+
+    return Response(
+        result["csv_content"],
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename=dataset_{name}.csv",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
+# ── HELPERS ──────────────────────────────────────────
+
+def _get_all_stations():
+    """Get all approved stations for the dataset station picker."""
+    context = _get_context()
+    try:
+        result = toolkit.get_action("station_list")(context, {
+            "submission_status": "approved",
+            "limit": "10000",
+        })
+        return result.get("results", [])
+    except Exception:
+        return []
