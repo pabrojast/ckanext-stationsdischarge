@@ -5,12 +5,10 @@ independent of CKAN packages/datasets.
 """
 
 import datetime
-import json
 import logging
 import uuid
 
 from sqlalchemy import Column, types
-from sqlalchemy.orm import class_mapper
 
 from ckan import model
 from ckan.model.domain_object import DomainObject
@@ -133,6 +131,10 @@ class HydroStation(DomainObject, BaseModel):
         return d
 
 
+# Backward-compatible alias used by older deployments/imports.
+HydroDatasetStation = HydroStation
+
+
 def init_db():
     """Create the hydro_stations table if it doesn't exist."""
     import sqlalchemy as sa
@@ -145,4 +147,5 @@ def init_db():
         else:
             log.debug("stationsdischarge: Table 'hydro_stations' already exists")
     except Exception as e:
-        log.error("stationsdischarge: Error initializing DB: %s", e)
+        log.exception("stationsdischarge: Error initializing DB: %s", e)
+        raise

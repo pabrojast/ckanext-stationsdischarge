@@ -42,7 +42,13 @@ class StationsDischargePlugin(plugins.SingletonPlugin):
 
     def configure(self, config):
         """Initialize the hydro_stations table on plugin load."""
-        from ckanext.stationsdischarge.db import init_db
+        from ckanext.stationsdischarge import db as station_db
+
+        init_db = getattr(station_db, "init_db", None)
+        if not callable(init_db):
+            raise ImportError(
+                "ckanext.stationsdischarge.db does not expose a callable init_db"
+            )
         init_db()
 
     # ── IBlueprint ──────────────────────────────────
