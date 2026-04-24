@@ -115,12 +115,8 @@ def station_create(context, data_dict):
     if not station.submission_status:
         station.submission_status = "draft"
 
-    # Handle elevation as float
-    if data_dict.get("elevation_masl"):
-        try:
-            station.elevation_masl = float(data_dict["elevation_masl"])
-        except (ValueError, TypeError):
-            pass
+    if "elevation_masl" in data_dict:
+        station.elevation_masl = clean.get("elevation_masl")
 
     try:
         station.save()
@@ -226,12 +222,8 @@ def station_update(context, data_dict):
     if lat and lon:
         station.spatial = _generate_spatial(lat, lon)
 
-    # Handle elevation
     if "elevation_masl" in data_dict:
-        try:
-            station.elevation_masl = float(data_dict["elevation_masl"]) if data_dict["elevation_masl"] else None
-        except (ValueError, TypeError):
-            pass
+        station.elevation_masl = clean.get("elevation_masl")
 
     station.modified = datetime.datetime.utcnow()
     try:
@@ -868,6 +860,9 @@ def dataset_update(context, data_dict):
     updatable = ("title", "name", "description", "owner_org",
                  "time_range", "agg", "interval_ms", "export_format")
     for field in updatable:
+        if field == "interval_ms" and "interval_ms" in data_dict:
+            ds.interval_ms = data.get("interval_ms")
+            continue
         if field in data and data[field] is not None:
             setattr(ds, field, data[field])
 

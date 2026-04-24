@@ -42,6 +42,40 @@ def _navl_valid_longitude(key, data, errors, context):
     data[key] = str(v)
 
 
+def _navl_optional_float(key, data, errors, context):
+    """Navl-compatible optional float coercion for form inputs."""
+    value = data.get(key, missing)
+    if value is missing:
+        return
+    if isinstance(value, str):
+        value = value.strip()
+    if value == "":
+        data[key] = None
+        return
+    try:
+        data[key] = float(value)
+    except (ValueError, TypeError):
+        errors[key].append("Must be a decimal number.")
+        raise StopOnError
+
+
+def _navl_optional_int(key, data, errors, context):
+    """Navl-compatible optional integer coercion for form inputs."""
+    value = data.get(key, missing)
+    if value is missing:
+        return
+    if isinstance(value, str):
+        value = value.strip()
+    if value == "":
+        data[key] = None
+        return
+    try:
+        data[key] = int(value)
+    except (ValueError, TypeError):
+        errors[key].append("Must be a whole number.")
+        raise StopOnError
+
+
 import re
 _UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I
@@ -110,7 +144,7 @@ def station_create_schema():
         "river_name": [ignore_missing, unicode_safe],
         "basin_name": [ignore_missing, unicode_safe],
         "country": [ignore_missing, unicode_safe],
-        "elevation_masl": [ignore_missing],
+        "elevation_masl": [ignore_missing, _navl_optional_float],
         # IoT
         "thingsboard_entity_id": [ignore_missing, unicode_safe, _navl_valid_uuid],
         "thingsboard_device_id": [ignore_missing, unicode_safe],
@@ -152,7 +186,7 @@ def dataset_create_schema():
         "owner_org": [ignore_missing, unicode_safe],
         "time_range": [ignore_missing, unicode_safe],
         "agg": [ignore_missing, unicode_safe],
-        "interval_ms": [ignore_missing],
+        "interval_ms": [ignore_missing, _navl_optional_int],
         "export_format": [ignore_missing, unicode_safe],
     }
 
