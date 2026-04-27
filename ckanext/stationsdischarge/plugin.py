@@ -49,7 +49,7 @@ class StationsDischargePlugin(plugins.SingletonPlugin):
             raise ImportError(
                 "ckanext.stationsdischarge.db does not expose a callable init_db"
             )
-        init_db()
+        .()
 
     # ── IBlueprint ──────────────────────────────────
 

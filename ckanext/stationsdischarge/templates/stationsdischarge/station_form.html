@@ -4,13 +4,13 @@
 {% set errors = errors or {} %}
 {% set telemetry_keys = data.telemetry_keys or [] %}
 
-<form class="dataset-form station-form" method="post" action="{{ form_action }}">
+<form class="dataset-form station-form station-form-modern" method="post" action="{{ form_action }}">
   {{ h.csrf_input() if 'csrf_input' in h }}
 
-  {# Error summary #}
+  {# ── Error summary ─────────────────────────────────── #}
   {% if error_summary %}
-    <div class="alert alert-danger">
-      <h4>{{ _('Errors in form') }}</h4>
+    <div class="alert alert-danger sf-alert">
+      <h4><i class="fa fa-exclamation-triangle"></i> {{ _('Errors in form') }}</h4>
       <ul>
         {% for field, msg in error_summary.items() %}
           <li><strong>{{ field }}:</strong> {{ msg }}</li>
@@ -20,65 +20,112 @@
   {% endif %}
 
   {# ══════════════════════════════════════════════════════
-     SECTION 1: Station Identification
+     QUICK FETCH (ThingsBoard) — top of form for fast data entry
      ══════════════════════════════════════════════════════ #}
-  <div class="station-form-section">
-    <div class="station-form-section-header">
-      <h3><i class="fa fa-id-card"></i> {{ _('Station Identification') }}</h3>
+  <fieldset class="form-section sf-section sf-quickfetch">
+    <legend><i class="fa fa-bolt"></i> {{ _('Quick Fill from ThingsBoard') }}</legend>
+    <div class="form-section-content">
+      <p class="sf-help-block">
+        {{ _('Paste the ThingsBoard Entity ID below and click Fetch to auto-fill the station name, description, location and telemetry keys. You can edit any field afterwards.') }}
+      </p>
+
+      <div class="sf-quickfetch-row {% if errors.thingsboard_entity_id %}has-error{% endif %}">
+        <div class="sf-quickfetch-input">
+          <label for="field-tb-entity-id" class="control-label">{{ _('ThingsBoard Entity ID') }}</label>
+          <input id="field-tb-entity-id" name="thingsboard_entity_id" type="text"
+                 class="form-control sf-input"
+                 placeholder="784f394c-42b6-11ec-81d3-0242ac130003"
+                 value="{{ data.thingsboard_entity_id or '' }}">
+          <p class="help-text">{{ _('UUID of the device in ThingsBoard.') }}</p>
+          {% if errors.thingsboard_entity_id %}<span class="error-block">{{ errors.thingsboard_entity_id | join(', ') }}</span>{% endif %}
+        </div>
+        <div class="sf-quickfetch-actions">
+          <button type="button" id="btn-fetch-tb" class="btn btn-primary sf-btn-fetch">
+            <i class="fa fa-cloud-download"></i> {{ _('Fetch metadata') }}
+          </button>
+        </div>
+      </div>
+
+      <div id="tb-fetch-status" class="alert sf-fetch-status" style="display:none;"></div>
+
+      {{ form.input('thingsboard_device_id', id='field-tb-device-id',
+         label=_('ThingsBoard Device ID'),
+         placeholder='784f394c-42b6-11ec-81d3-0242ac130003',
+         value=data.thingsboard_device_id, error=errors.thingsboard_device_id,
+         attrs={'class': 'form-control sf-input'}) }}
+      <p class="help-text">{{ _('Optional. Only set this if the device ID differs from the entity ID above.') }}</p>
     </div>
-    <div class="station-form-section-body">
+  </fieldset>
+
+  {# ══════════════════════════════════════════════════════
+     SECTION: Station Identification
+     ══════════════════════════════════════════════════════ #}
+  <fieldset class="form-section sf-section">
+    <legend><i class="fa fa-id-card"></i> {{ _('Station Identification') }}</legend>
+    <div class="form-section-content">
 
       {{ form.input('title', id='field-title', label=_('Station Name') + ' *',
          placeholder=_('e.g. Río Maipo – Puente El Manzano'),
          value=data.title, error=errors.title,
          classes=['control-full', 'control-large'],
-         attrs={'class': 'form-control'}) }}
+         attrs={'class': 'form-control sf-input'}) }}
 
-      {{ form.input('name', id='field-name', label=_('URL Slug') + ' *',
-         placeholder=_('e.g. est-rio-maipo-puente-manzano'),
-         value=data.name, error=errors.name,
-         attrs={'class': 'form-control'}) }}
-      <p class="help-text">{{ _('URL-friendly identifier. Auto-generated from title if left empty.') }}</p>
-
-      {{ form.input('station_id', id='field-station-id', label=_('Station ID') + ' *',
-         placeholder=_('e.g. EST-MAIPO-001'),
-         value=data.station_id, error=errors.station_id,
-         attrs={'class': 'form-control'}) }}
-
-      <div class="form-group control-group{% if errors.owner_org %} error{% endif %}">
-        <label for="field-owner-org" class="control-label">{{ _('Organization') }} *</label>
-        <div class="controls">
-          <select id="field-owner-org" name="owner_org" class="form-control">
-            <option value="">{{ _('Select organization...') }}</option>
-            {% for org_item in organizations %}
-              <option value="{{ org_item.id }}"
-                {% if data.owner_org == org_item.id %}selected{% endif %}>
-                {{ org_item.display_name or org_item.title }}
-              </option>
-            {% endfor %}
-          </select>
+      <div class="row">
+        <div class="col-md-6">
+          {{ form.input('name', id='field-name', label=_('URL Slug') + ' *',
+             placeholder=_('e.g. est-rio-maipo-puente-manzano'),
+             value=data.name, error=errors.name,
+             attrs={'class': 'form-control sf-input'}) }}
+          <p class="help-text">{{ _('URL-friendly identifier. Auto-generated from title if left empty.') }}</p>
         </div>
-        {% if errors.owner_org %}<span class="error-block">{{ errors.owner_org | join(', ') }}</span>{% endif %}
+        <div class="col-md-6">
+          {{ form.input('station_id', id='field-station-id', label=_('Station ID') + ' *',
+             placeholder=_('e.g. EST-MAIPO-001'),
+             value=data.station_id, error=errors.station_id,
+             attrs={'class': 'form-control sf-input'}) }}
+          <p class="help-text">{{ _('Internal identifier for this station.') }}</p>
+        </div>
       </div>
 
-      <div class="form-group control-group{% if errors.station_status %} error{% endif %}">
-        <label for="field-station-status" class="control-label">{{ _('Station Status') }} *</label>
-        <div class="controls">
-          <select id="field-station-status" name="station_status" class="form-control">
-            {% set status_choices = [
-              ('active', _('Active')),
-              ('inactive', _('Inactive')),
-              ('maintenance', _('Maintenance'))
-            ] %}
-            {% for value, label in status_choices %}
-              <option value="{{ value }}"
-                {% if (data.station_status or 'active') == value %}selected{% endif %}>
-                {{ label }}
-              </option>
-            {% endfor %}
-          </select>
+      <div class="row">
+        <div class="col-md-6">
+          <div class="form-group control-group{% if errors.owner_org %} error{% endif %}">
+            <label for="field-owner-org" class="control-label">{{ _('Organization') }} *</label>
+            <div class="controls">
+              <select id="field-owner-org" name="owner_org" class="form-control sf-input">
+                <option value="">{{ _('Select organization...') }}</option>
+                {% for org_item in organizations %}
+                  <option value="{{ org_item.id }}"
+                    {% if data.owner_org == org_item.id %}selected{% endif %}>
+                    {{ org_item.display_name or org_item.title }}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+            {% if errors.owner_org %}<span class="error-block">{{ errors.owner_org | join(', ') }}</span>{% endif %}
+          </div>
         </div>
-        {% if errors.station_status %}<span class="error-block">{{ errors.station_status | join(', ') }}</span>{% endif %}
+        <div class="col-md-6">
+          <div class="form-group control-group{% if errors.station_status %} error{% endif %}">
+            <label for="field-station-status" class="control-label">{{ _('Station Status') }} *</label>
+            <div class="controls">
+              <select id="field-station-status" name="station_status" class="form-control sf-input">
+                {% set status_choices = [
+                  ('active', _('Active')),
+                  ('inactive', _('Inactive')),
+                  ('maintenance', _('Maintenance'))
+                ] %}
+                {% for value, label in status_choices %}
+                  <option value="{{ value }}"
+                    {% if (data.station_status or 'active') == value %}selected{% endif %}>
+                    {{ label }}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+            {% if errors.station_status %}<span class="error-block">{{ errors.station_status | join(', ') }}</span>{% endif %}
+          </div>
+        </div>
       </div>
 
       {{ form.markdown('notes', id='field-notes', label=_('Description'),
@@ -88,123 +135,104 @@
       {{ form.input('tag_string', id='field-tags', label=_('Tags'),
          placeholder=_('e.g. hydrology, water level'),
          value=data.tag_string, error=errors.tag_string,
-         attrs={'class': 'form-control'}) }}
+         attrs={'class': 'form-control sf-input'}) }}
 
     </div>
-  </div>
+  </fieldset>
 
   {# ══════════════════════════════════════════════════════
-     SECTION 2: Location
+     SECTION: Location
      ══════════════════════════════════════════════════════ #}
-  <div class="station-form-section">
-    <div class="station-form-section-header">
-      <h3><i class="fa fa-map-marker"></i> {{ _('Location') }}</h3>
-    </div>
-    <div class="station-form-section-body">
+  <fieldset class="form-section sf-section">
+    <legend><i class="fa fa-map-marker"></i> {{ _('Location') }}</legend>
+    <div class="form-section-content">
 
-      {{ form.input('latitude', id='field-latitude', label=_('Latitude') + ' *',
-         placeholder='-33.5982',
-         value=data.latitude, error=errors.latitude,
-         attrs={'class': 'form-control', 'type': 'number', 'step': 'any', 'min': '-90', 'max': '90'}) }}
-      <p class="help-text">{{ _('Decimal degrees (WGS 84). Range: −90 to 90.') }}</p>
-
-      {{ form.input('longitude', id='field-longitude', label=_('Longitude') + ' *',
-         placeholder='-70.3451',
-         value=data.longitude, error=errors.longitude,
-         attrs={'class': 'form-control', 'type': 'number', 'step': 'any', 'min': '-180', 'max': '180'}) }}
-      <p class="help-text">{{ _('Decimal degrees (WGS 84). Range: −180 to 180.') }}</p>
-
-      {{ form.input('river_name', id='field-river-name', label=_('River / Water Body'),
-         placeholder=_('e.g. Río Maipo'),
-         value=data.river_name, error=errors.river_name,
-         attrs={'class': 'form-control'}) }}
-
-      {{ form.input('basin_name', id='field-basin-name', label=_('Basin'),
-         placeholder=_('e.g. Maipo Basin'),
-         value=data.basin_name, error=errors.basin_name,
-         attrs={'class': 'form-control'}) }}
-
-      {{ form.input('country', id='field-country', label=_('Country'),
-         placeholder=_('e.g. Chile'),
-         value=data.country, error=errors.country,
-         attrs={'class': 'form-control'}) }}
-
-      {{ form.input('elevation_masl', id='field-elevation', label=_('Elevation (m a.s.l.)'),
-         placeholder='842',
-         value=data.elevation_masl, error=errors.elevation_masl,
-         attrs={'class': 'form-control', 'type': 'number', 'step': 'any'}) }}
-
-    </div>
-  </div>
-
-  {# ══════════════════════════════════════════════════════
-     SECTION 3: IoT Sensor Connection
-     ══════════════════════════════════════════════════════ #}
-  <div class="station-form-section">
-    <div class="station-form-section-header">
-      <h3><i class="fa fa-plug"></i> {{ _('IoT Sensor Connection') }}</h3>
-    </div>
-    <div class="station-form-section-body">
-
-      <div class="form-group control-group{% if errors.thingsboard_entity_id %} error{% endif %}">
-        <label for="field-tb-entity-id" class="control-label">{{ _('ThingsBoard Entity ID') }}</label>
-        <div class="controls" style="display: flex; gap: 8px; align-items: start;">
-          <input id="field-tb-entity-id" name="thingsboard_entity_id" type="text"
-                 class="form-control" style="flex: 1;"
-                 placeholder="784f394c-42b6-11ec-81d3-0242ac130003"
-                 value="{{ data.thingsboard_entity_id or '' }}">
-          <button type="button" id="btn-fetch-tb" class="btn btn-info"
-                  title="{{ _('Fetch metadata from ThingsBoard') }}">
-            <i class="fa fa-cloud-download"></i> {{ _('Fetch') }}
-          </button>
+      <div class="row">
+        <div class="col-md-6">
+          {{ form.input('latitude', id='field-latitude', label=_('Latitude') + ' *',
+             placeholder='-33.5982',
+             value=data.latitude, error=errors.latitude,
+             attrs={'class': 'form-control sf-input', 'type': 'number', 'step': 'any', 'min': '-90', 'max': '90'}) }}
+          <p class="help-text">{{ _('Decimal degrees (WGS 84). Range: −90 to 90.') }}</p>
         </div>
-        <p class="help-text">{{ _('UUID of the device in ThingsBoard. Click Fetch to auto-fill fields.') }}</p>
-        {% if errors.thingsboard_entity_id %}<span class="error-block">{{ errors.thingsboard_entity_id | join(', ') }}</span>{% endif %}
-        <div id="tb-fetch-status" class="alert" style="display:none; margin-top:8px;"></div>
+        <div class="col-md-6">
+          {{ form.input('longitude', id='field-longitude', label=_('Longitude') + ' *',
+             placeholder='-70.3451',
+             value=data.longitude, error=errors.longitude,
+             attrs={'class': 'form-control sf-input', 'type': 'number', 'step': 'any', 'min': '-180', 'max': '180'}) }}
+          <p class="help-text">{{ _('Decimal degrees (WGS 84). Range: −180 to 180.') }}</p>
+        </div>
       </div>
 
-      {{ form.input('thingsboard_device_id', id='field-tb-device-id',
-         label=_('ThingsBoard Device ID'),
-         placeholder='784f394c-42b6-11ec-81d3-0242ac130003',
-         value=data.thingsboard_device_id, error=errors.thingsboard_device_id,
-         attrs={'class': 'form-control'}) }}
-      <p class="help-text">{{ _('Only if the device ID differs from the entity ID above.') }}</p>
+      <div class="row">
+        <div class="col-md-6">
+          {{ form.input('river_name', id='field-river-name', label=_('River / Water Body'),
+             placeholder=_('e.g. Río Maipo'),
+             value=data.river_name, error=errors.river_name,
+             attrs={'class': 'form-control sf-input'}) }}
+        </div>
+        <div class="col-md-6">
+          {{ form.input('basin_name', id='field-basin-name', label=_('Basin'),
+             placeholder=_('e.g. Maipo Basin'),
+             value=data.basin_name, error=errors.basin_name,
+             attrs={'class': 'form-control sf-input'}) }}
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-md-6">
+          {{ form.input('country', id='field-country', label=_('Country'),
+             placeholder=_('e.g. Chile'),
+             value=data.country, error=errors.country,
+             attrs={'class': 'form-control sf-input'}) }}
+        </div>
+        <div class="col-md-6">
+          {{ form.input('elevation_masl', id='field-elevation', label=_('Elevation (m a.s.l.)'),
+             placeholder='842',
+             value=data.elevation_masl, error=errors.elevation_masl,
+             attrs={'class': 'form-control sf-input', 'type': 'number', 'step': 'any'}) }}
+        </div>
+      </div>
 
     </div>
-  </div>
+  </fieldset>
 
   {# ══════════════════════════════════════════════════════
-     SECTION 4: Telemetry Keys
+     SECTION: Telemetry Keys
      ══════════════════════════════════════════════════════ #}
-  <div class="station-form-section">
-    <div class="station-form-section-header">
-      <h3><i class="fa fa-key"></i> {{ _('Telemetry Keys') }}</h3>
-    </div>
-    <div class="station-form-section-body">
-      <p class="help-text">{{ _('Add the telemetry keys (variables) that this station monitors.') }}</p>
+  <fieldset class="form-section sf-section">
+    <legend><i class="fa fa-key"></i> {{ _('Telemetry Keys') }}</legend>
+    <div class="form-section-content">
+      <p class="sf-help-block">
+        {{ _('Add the telemetry keys (variables) that this station monitors. The fetch above can fill these automatically.') }}
+      </p>
 
-      <div id="telemetry-keys-container">
+      <div id="telemetry-keys-container" class="sf-tk-container">
         {% for tk in telemetry_keys %}
-        <div class="tk-row" data-index="{{ loop.index0 }}">
-          <div class="row" style="margin-bottom: 8px;">
-            <div class="col-md-3">
-              <input type="text" name="tk_key_{{ loop.index0 }}" class="form-control"
-                     placeholder="{{ _('Key (e.g. water_level)') }}"
+        <div class="sf-tk-row" data-index="{{ loop.index0 }}">
+          <div class="sf-tk-grid">
+            <div class="sf-tk-field">
+              <label class="sf-tk-label">{{ _('Key') }}</label>
+              <input type="text" name="tk_key_{{ loop.index0 }}" class="form-control sf-input"
+                     placeholder="water_level"
                      value="{{ tk.telemetry_key or '' }}">
             </div>
-            <div class="col-md-3">
-              <input type="text" name="tk_label_{{ loop.index0 }}" class="form-control"
-                     placeholder="{{ _('Label (e.g. Water Level)') }}"
+            <div class="sf-tk-field">
+              <label class="sf-tk-label">{{ _('Label') }}</label>
+              <input type="text" name="tk_label_{{ loop.index0 }}" class="form-control sf-input"
+                     placeholder="{{ _('Water Level') }}"
                      value="{{ tk.label or '' }}">
             </div>
-            <div class="col-md-2">
-              <input type="text" name="tk_unit_{{ loop.index0 }}" class="form-control"
-                     placeholder="{{ _('Unit (e.g. m)') }}"
+            <div class="sf-tk-field sf-tk-field-narrow">
+              <label class="sf-tk-label">{{ _('Unit') }}</label>
+              <input type="text" name="tk_unit_{{ loop.index0 }}" class="form-control sf-input"
+                     placeholder="m"
                      value="{{ tk.unit or '' }}">
             </div>
-            <div class="col-md-3">
-              <select name="tk_variable_type_{{ loop.index0 }}" class="form-control">
-                <option value="">{{ _('Variable type...') }}</option>
+            <div class="sf-tk-field">
+              <label class="sf-tk-label">{{ _('Variable type') }}</label>
+              <select name="tk_variable_type_{{ loop.index0 }}" class="form-control sf-input">
+                <option value="">{{ _('Select...') }}</option>
                 {% set var_types = [
                   ('water_level', _('Water Level')),
                   ('precipitation', _('Precipitation')),
@@ -221,8 +249,8 @@
                 {% endfor %}
               </select>
             </div>
-            <div class="col-md-1">
-              <button type="button" class="btn btn-danger btn-sm tk-remove" title="{{ _('Remove') }}">
+            <div class="sf-tk-remove-wrap">
+              <button type="button" class="btn btn-danger btn-sm sf-tk-remove" title="{{ _('Remove') }}">
                 <i class="fa fa-trash"></i>
               </button>
             </div>
@@ -231,18 +259,21 @@
         {% endfor %}
       </div>
 
-      <button type="button" id="btn-add-tk" class="btn btn-default btn-sm" style="margin-top: 8px;">
+      <button type="button" id="btn-add-tk" class="btn btn-default sf-btn-add">
         <i class="fa fa-plus"></i> {{ _('Add Telemetry Key') }}
       </button>
 
     </div>
-  </div>
+  </fieldset>
 
   {# ══════════════════════════════════════════════════════
-     SUBMIT BUTTONS
+     SUBMIT BAR
      ══════════════════════════════════════════════════════ #}
-  <div class="form-actions" style="margin-top: 20px;">
-    <div class="btn-group">
+  <div class="sf-form-actions">
+    <a href="{{ h.url_for('hydro_stations.index') }}" class="btn btn-default sf-btn-cancel">
+      {{ _('Cancel') }}
+    </a>
+    <div class="sf-submit-group">
       <button type="submit" name="submission_action" value="draft" class="btn btn-default">
         <i class="fa fa-save"></i> {{ _('Save as Draft') }}
       </button>
@@ -250,7 +281,6 @@
         <i class="fa fa-paper-plane"></i> {{ _('Submit for Review') }}
       </button>
     </div>
-    <a href="{{ h.url_for('hydro_stations.index') }}" class="btn btn-link">{{ _('Cancel') }}</a>
   </div>
 
 </form>
@@ -260,9 +290,9 @@
   // ── Telemetry Keys dynamic rows ──
   var container = document.getElementById('telemetry-keys-container');
   var addBtn = document.getElementById('btn-add-tk');
-  var nextIndex = container ? container.querySelectorAll('.tk-row').length : 0;
+  var nextIndex = container ? container.querySelectorAll('.sf-tk-row').length : 0;
 
-  var varTypeOptions = '<option value="">Variable type...</option>' +
+  var varTypeOptions = '<option value="">Select...</option>' +
     '<option value="water_level">Water Level</option>' +
     '<option value="precipitation">Precipitation</option>' +
     '<option value="water_temperature">Water Temperature</option>' +
@@ -273,19 +303,30 @@
     '<option value="soil_moisture">Soil Moisture</option>' +
     '<option value="other">Other</option>';
 
+  function escAttr(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
   function addKeyRow(key, label, unit, varType) {
     var idx = nextIndex++;
-    var html = '<div class="tk-row" data-index="' + idx + '">' +
-      '<div class="row" style="margin-bottom: 8px;">' +
-      '<div class="col-md-3"><input type="text" name="tk_key_' + idx + '" class="form-control" placeholder="Key" value="' + (key || '') + '"></div>' +
-      '<div class="col-md-3"><input type="text" name="tk_label_' + idx + '" class="form-control" placeholder="Label" value="' + (label || '') + '"></div>' +
-      '<div class="col-md-2"><input type="text" name="tk_unit_' + idx + '" class="form-control" placeholder="Unit" value="' + (unit || '') + '"></div>' +
-      '<div class="col-md-3"><select name="tk_variable_type_' + idx + '" class="form-control">' + varTypeOptions + '</select></div>' +
-      '<div class="col-md-1"><button type="button" class="btn btn-danger btn-sm tk-remove" title="Remove"><i class="fa fa-trash"></i></button></div>' +
-      '</div></div>';
+    var html = '<div class="sf-tk-row" data-index="' + idx + '">' +
+      '<div class="sf-tk-grid">' +
+      '<div class="sf-tk-field"><label class="sf-tk-label">Key</label>' +
+      '<input type="text" name="tk_key_' + idx + '" class="form-control sf-input" placeholder="water_level" value="' + escAttr(key) + '"></div>' +
+      '<div class="sf-tk-field"><label class="sf-tk-label">Label</label>' +
+      '<input type="text" name="tk_label_' + idx + '" class="form-control sf-input" placeholder="Water Level" value="' + escAttr(label) + '"></div>' +
+      '<div class="sf-tk-field sf-tk-field-narrow"><label class="sf-tk-label">Unit</label>' +
+      '<input type="text" name="tk_unit_' + idx + '" class="form-control sf-input" placeholder="m" value="' + escAttr(unit) + '"></div>' +
+      '<div class="sf-tk-field"><label class="sf-tk-label">Variable type</label>' +
+      '<select name="tk_variable_type_' + idx + '" class="form-control sf-input">' + varTypeOptions + '</select></div>' +
+      '<div class="sf-tk-remove-wrap">' +
+      '<button type="button" class="btn btn-danger btn-sm sf-tk-remove" title="Remove"><i class="fa fa-trash"></i></button>' +
+      '</div></div></div>';
     container.insertAdjacentHTML('beforeend', html);
     if (varType) {
-      var sel = container.querySelector('.tk-row[data-index="' + idx + '"] select');
+      var sel = container.querySelector('.sf-tk-row[data-index="' + idx + '"] select');
       if (sel) sel.value = varType;
     }
   }
@@ -296,8 +337,8 @@
 
   if (container) {
     container.addEventListener('click', function(e) {
-      var btn = e.target.closest('.tk-remove');
-      if (btn) btn.closest('.tk-row').remove();
+      var btn = e.target.closest('.sf-tk-remove');
+      if (btn) btn.closest('.sf-tk-row').remove();
     });
   }
 
@@ -309,14 +350,14 @@
     fetchBtn.addEventListener('click', function() {
       var entityId = document.getElementById('field-tb-entity-id').value.trim();
       if (!entityId) {
-        statusDiv.className = 'alert alert-warning';
+        statusDiv.className = 'alert alert-warning sf-fetch-status';
         statusDiv.textContent = 'Please enter a ThingsBoard Entity ID first.';
         statusDiv.style.display = 'block';
         return;
       }
 
       fetchBtn.disabled = true;
-      statusDiv.className = 'alert alert-info';
+      statusDiv.className = 'alert alert-info sf-fetch-status';
       statusDiv.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Fetching metadata from ThingsBoard...';
       statusDiv.style.display = 'block';
 
@@ -331,12 +372,11 @@
       .then(function(data) {
         fetchBtn.disabled = false;
         if (data.error) {
-          statusDiv.className = 'alert alert-danger';
+          statusDiv.className = 'alert alert-danger sf-fetch-status';
           statusDiv.textContent = 'Error: ' + JSON.stringify(data.error);
           return;
         }
 
-        // Fill device info
         var dev = data.device || {};
         var attrs = data.attributes || {};
 
@@ -349,17 +389,14 @@
           if (notesField && !notesField.value) notesField.value = dev.description;
         }
 
-        // Fill location from attributes
         var latField = document.getElementById('field-latitude');
         var lonField = document.getElementById('field-longitude');
         if (latField && !latField.value && attrs.latitude) latField.value = attrs.latitude;
         if (lonField && !lonField.value && attrs.longitude) lonField.value = attrs.longitude;
 
-        // Fill telemetry keys
         var keys = data.telemetry_keys || [];
         if (keys.length > 0) {
-          // Clear existing empty rows
-          var existingRows = container.querySelectorAll('.tk-row');
+          var existingRows = container.querySelectorAll('.sf-tk-row');
           var hasData = false;
           existingRows.forEach(function(row) {
             var keyInput = row.querySelector('input[name^="tk_key_"]');
@@ -374,14 +411,14 @@
           keys.forEach(function(k) { addKeyRow(k, k, '', ''); });
         }
 
-        statusDiv.className = 'alert alert-success';
-        statusDiv.textContent = 'Metadata fetched successfully! ' +
-          (dev.name ? 'Device: ' + dev.name + '. ' : '') +
+        statusDiv.className = 'alert alert-success sf-fetch-status';
+        statusDiv.innerHTML = '<i class="fa fa-check-circle"></i> Metadata fetched successfully! ' +
+          (dev.name ? 'Device: <strong>' + dev.name + '</strong>. ' : '') +
           keys.length + ' telemetry key(s) found.';
       })
       .catch(function(err) {
         fetchBtn.disabled = false;
-        statusDiv.className = 'alert alert-danger';
+        statusDiv.className = 'alert alert-danger sf-fetch-status';
         statusDiv.textContent = 'Error: ' + err.message;
       });
     });
