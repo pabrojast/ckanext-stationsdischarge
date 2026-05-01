@@ -372,18 +372,22 @@ def _tb_request(tb_url, tb_api_key, api_path):
     log.debug("ThingsBoard request: %s", url)
 
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace") if e.fp else ""
         log.error("ThingsBoard API error %s: %s", e.code, body)
-        # Include the TB error body so the user can see what went wrong
         error_msg = "ThingsBoard API returned HTTP %s" % e.code
         if body:
             try:
                 tb_error = json.loads(body)
-                error_msg += ": " + tb_error.get("message", body[:200])
-            except Exception:
+                if isinstance(tb_error, dict):
+                    error_msg += ": " + tb_error.get("message", body[:200])
+                elif isinstance(tb_error, str):
+                    error_msg += ": " + tb_error[:200]
+                else:
+                    error_msg += ": " + body[:200]
+            except (json.JSONDecodeError, ValueError):
                 error_msg += ": " + body[:200]
         raise toolkit.ValidationError(
             {"thingsboard": [error_msg]}
@@ -524,6 +528,7 @@ def _fetch_telemetry(tb_url, tb_api_key, entity_id, keys, start_ts=None,
             )
 
     # ── Attempt 1: with aggregation (if requested) ──
+    agg_error = None
     if agg and interval and start_ts and end_ts:
         api_path = _build_url(use_agg=True)
         log.debug("Fetching telemetry WITH aggregation: keys=%s agg=%s interval=%s",
@@ -531,16 +536,24 @@ def _fetch_telemetry(tb_url, tb_api_key, entity_id, keys, start_ts=None,
         try:
             return _tb_request(tb_url, tb_api_key, api_path)
         except toolkit.ValidationError as e:
-            # If aggregation fails, log and fall back to raw data
+            agg_error = e
+            err_parts = e.error_dict.get("thingsboard", ["unknown error"]) if hasattr(e, 'error_dict') else [str(e)]
             log.warning(
-                "Aggregated telemetry failed (will retry without aggregation): %s",
-                str(e.error_dict.get("thingsboard", ["unknown"])[0]) if hasattr(e, 'error_dict') else str(e)
+                "Aggregated telemetry failed for %s (will retry raw): %s",
+                entity_id, err_parts[0] if err_parts else str(e)
             )
 
     # ── Attempt 2: raw data without aggregation ──
     api_path = _build_url(use_agg=False)
     log.debug("Fetching telemetry WITHOUT aggregation: keys=%s limit=%s", keys, limit)
-    return _tb_request(tb_url, tb_api_key, api_path)
+    try:
+        return _tb_request(tb_url, tb_api_key, api_path)
+    except toolkit.ValidationError as raw_err:
+        # If raw also fails, raise the aggregation error (more informative)
+        # unless there was no aggregation attempt
+        if agg_error is not None:
+            raise agg_error
+        raise raw_err
 
 
 # ── Actions ──────────────────────────────────────────

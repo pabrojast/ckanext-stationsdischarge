@@ -3,6 +3,9 @@
 import json
 import logging
 
+import ckan.model as model
+import ckan.plugins.toolkit as toolkit
+
 log = logging.getLogger(__name__)
 
 # ── Choice labels ──────────────────────────────────────
@@ -55,6 +58,21 @@ def stationsdischarge_status_badge_class(status):
     }.get(status, "badge-secondary")
 
 
+def is_sysadmin():
+    """Check if the current user is a sysadmin.
+
+    Works inside Jinja2 templates as ``h.is_sysadmin()``.
+    """
+    try:
+        user = toolkit.c.user
+        if not user:
+            return False
+        user_obj = model.User.get(user)
+        return bool(user_obj and user_obj.sysadmin)
+    except Exception:
+        return False
+
+
 def get_helpers():
     """Return all template helpers for this extension."""
     return {
@@ -62,4 +80,5 @@ def get_helpers():
         "stationsdischarge_submission_status_label": stationsdischarge_submission_status_label,
         "stationsdischarge_submission_badge_class": stationsdischarge_submission_badge_class,
         "stationsdischarge_status_badge_class": stationsdischarge_status_badge_class,
+        "is_sysadmin": is_sysadmin,
     }

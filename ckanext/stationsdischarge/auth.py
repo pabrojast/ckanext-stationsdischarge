@@ -71,13 +71,19 @@ def station_show(context, data_dict):
 
 
 def station_create(context, data_dict):
-    """Organization editors/admins and sysadmins can create stations."""
+    """Organization editors/admins and sysadmins can create stations.
+    Only sysadmins can publish directly."""
     if _is_sysadmin(context):
         return {"success": True}
 
     user = context.get("user")
     if not user:
         return {"success": False, "msg": "Must be logged in to create stations."}
+
+    # Non-sysadmins cannot publish directly
+    submission_action = data_dict.get("submission_action")
+    if submission_action == "publish":
+        return {"success": False, "msg": "Only sysadmins can publish stations directly."}
 
     org_id = data_dict.get("owner_org")
     if org_id and _is_org_member(user, org_id, "editor"):
@@ -92,10 +98,10 @@ def station_update(context, data_dict):
     if _is_sysadmin(context):
         return {"success": True}
 
-    # Approval/rejection requires sysadmin
+    # Approval/rejection/publish requires sysadmin
     submission_action = data_dict.get("submission_action")
-    if submission_action in ("approve", "reject"):
-        return {"success": False, "msg": "Only sysadmins can approve/reject stations."}
+    if submission_action in ("approve", "reject", "publish"):
+        return {"success": False, "msg": "Only sysadmins can approve, reject, or publish stations."}
 
     user = context.get("user")
     if not user:
