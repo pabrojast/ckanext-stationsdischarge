@@ -196,7 +196,28 @@
 
   function showError(msg) {
     var el = $('dashError');
-    if (el) { el.style.display = 'block'; el.textContent = msg; }
+    if (el) {
+      // Parse error messages from CKAN API responses
+      var displayMsg = msg;
+      try {
+        var parsed = JSON.parse(msg);
+        if (parsed.thingsboard && Array.isArray(parsed.thingsboard)) {
+          displayMsg = 'ThingsBoard: ' + parsed.thingsboard.join('; ');
+        } else if (parsed.error && typeof parsed.error === 'string') {
+          displayMsg = parsed.error;
+        } else if (typeof parsed === 'object') {
+          var parts = [];
+          for (var k in parsed) {
+            var v = parsed[k];
+            if (Array.isArray(v)) parts.push(k + ': ' + v.join('; '));
+            else parts.push(k + ': ' + v);
+          }
+          displayMsg = parts.join(' | ') || msg;
+        }
+      } catch(e) { displayMsg = msg; }
+      el.style.display = 'block';
+      el.innerHTML = '<i class="fa fa-exclamation-circle"></i> ' + displayMsg;
+    }
   }
 
   function hideError() {

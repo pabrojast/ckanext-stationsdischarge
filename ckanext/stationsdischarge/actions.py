@@ -369,14 +369,24 @@ def _tb_request(tb_url, tb_api_key, api_path):
     req.add_header("X-Authorization", "ApiKey " + tb_api_key)
     req.add_header("Content-Type", "application/json")
 
+    log.debug("ThingsBoard request: %s", url)
+
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace") if e.fp else ""
         log.error("ThingsBoard API error %s: %s", e.code, body)
+        # Include the TB error body so the user can see what went wrong
+        error_msg = "ThingsBoard API returned HTTP %s" % e.code
+        if body:
+            try:
+                tb_error = json.loads(body)
+                error_msg += ": " + tb_error.get("message", body[:200])
+            except Exception:
+                error_msg += ": " + body[:200]
         raise toolkit.ValidationError(
-            {"thingsboard": ["ThingsBoard API returned HTTP %s" % e.code]}
+            {"thingsboard": [error_msg]}
         )
     except urllib.error.URLError as e:
         log.error("ThingsBoard connection error: %s", e.reason)
@@ -477,23 +487,59 @@ def _fetch_telemetry(tb_url, tb_api_key, entity_id, keys, start_ts=None,
     When *agg* and *interval* are provided, ThingsBoard returns aggregated
     values (e.g. hourly/daily averages) which dramatically reduces payload
     for long time ranges.
+
+    If aggregation fails (HTTP 400), the function falls back to raw data
+    with a higher limit, since some TB versions/instances do not support
+    the agg/interval parameters on the timeseries endpoint.
     """
     safe_id = urllib.parse.quote(str(entity_id), safe="-")
     if "/" in entity_id or ".." in entity_id:
         raise toolkit.ValidationError({"thingsboard_entity_id": "Invalid entity ID"})
-    if start_ts and end_ts:
-        api_path = (
-            "/api/plugins/telemetry/DEVICE/%s/values/timeseries"
-            "?keys=%s&startTs=%s&endTs=%s&limit=%s"
-            % (safe_id, keys, start_ts, end_ts, limit)
-        )
-        if agg and interval:
-            api_path += "&agg=%s&interval=%s" % (agg, interval)
-    else:
-        api_path = (
-            "/api/plugins/telemetry/DEVICE/%s/values/timeseries"
-            "?keys=%s" % (safe_id, keys)
-        )
+
+    safe_keys = urllib.parse.quote(str(keys), safe=",")
+
+    def _build_url(use_agg=False):
+        """Build the ThingsBoard API URL."""
+        if start_ts and end_ts:
+            if use_agg and agg and interval:
+                # Aggregation mode: don't send limit, TB ignores it and
+                # some versions reject it alongside agg/interval.
+                return (
+                    "/api/plugins/telemetry/DEVICE/%s/values/timeseries"
+                    "?keys=%s&startTs=%s&endTs=%s"
+                    "&agg=%s&interval=%s"
+                    % (safe_id, safe_keys, str(start_ts), str(end_ts),
+                       urllib.parse.quote(str(agg), safe=""), int(interval))
+                )
+            else:
+                return (
+                    "/api/plugins/telemetry/DEVICE/%s/values/timeseries"
+                    "?keys=%s&startTs=%s&endTs=%s&limit=%s"
+                    % (safe_id, safe_keys, str(start_ts), str(end_ts), limit)
+                )
+        else:
+            return (
+                "/api/plugins/telemetry/DEVICE/%s/values/timeseries"
+                "?keys=%s" % (safe_id, safe_keys)
+            )
+
+    # ── Attempt 1: with aggregation (if requested) ──
+    if agg and interval and start_ts and end_ts:
+        api_path = _build_url(use_agg=True)
+        log.debug("Fetching telemetry WITH aggregation: keys=%s agg=%s interval=%s",
+                  keys, agg, interval)
+        try:
+            return _tb_request(tb_url, tb_api_key, api_path)
+        except toolkit.ValidationError as e:
+            # If aggregation fails, log and fall back to raw data
+            log.warning(
+                "Aggregated telemetry failed (will retry without aggregation): %s",
+                str(e.error_dict.get("thingsboard", ["unknown"])[0]) if hasattr(e, 'error_dict') else str(e)
+            )
+
+    # ── Attempt 2: raw data without aggregation ──
+    api_path = _build_url(use_agg=False)
+    log.debug("Fetching telemetry WITHOUT aggregation: keys=%s limit=%s", keys, limit)
     return _tb_request(tb_url, tb_api_key, api_path)
 
 
