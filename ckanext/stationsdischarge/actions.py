@@ -115,6 +115,18 @@ def station_create(context, data_dict):
     if not station.submission_status:
         station.submission_status = "draft"
 
+    # Handle submission workflow actions
+    submission_action = data_dict.get("submission_action")
+    if submission_action == "submit":
+        station.submission_status = "pending"
+        station.submitted_at = now
+    elif submission_action == "publish":
+        from ckanext.stationsdischarge.auth import _is_sysadmin
+        if _is_sysadmin(context):
+            station.submission_status = "approved"
+            station.reviewed_at = now
+            station.reviewed_by = user_obj.id if user_obj else None
+
     if "elevation_masl" in data_dict:
         station.elevation_masl = clean.get("elevation_masl")
 
@@ -190,6 +202,14 @@ def station_update(context, data_dict):
     if submission_action == "submit":
         clean["submission_status"] = "pending"
         clean["submitted_at"] = datetime.datetime.utcnow()
+    elif submission_action == "publish":
+        from ckanext.stationsdischarge.auth import _is_sysadmin
+        if not _is_sysadmin(context):
+            raise toolkit.NotAuthorized("Only sysadmins can publish stations directly.")
+        clean["submission_status"] = "approved"
+        clean["reviewed_at"] = datetime.datetime.utcnow()
+        user_obj = model.User.get(context.get("user"))
+        clean["reviewed_by"] = user_obj.id if user_obj else None
     elif submission_action == "approve":
         from ckanext.stationsdischarge.auth import _is_sysadmin
         if not _is_sysadmin(context):

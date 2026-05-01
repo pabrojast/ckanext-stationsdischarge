@@ -173,26 +173,4 @@
   {% endif %}
 {% endblock %}
 
-{% block secondary_content %}
-  <div class="module module-narrow module-shallow">
-    <h2 class="module-heading">
-      <i class="fa fa-arrow-left"></i>
-      <a href="{{ h.url_for('hydro_stations.index') }}">{{ _('Back to Stations') }}</a>
-    </h2>
-  </div>
-
-  {% if station.spatial %}
-  <div class="module module-narrow module-shallow">
-    <h2 class="module-heading">
-      <i class="fa fa-map"></i>
-      {{ _('Location') }}
-    </h2>
-    <div class="module-content">
-      <p><strong>{{ station.latitude }}</strong>, <strong>{{ station.longitude }}</strong></p>
-      {% if station.country %}
-        <p>{{ station.country }}</p>
-      {% endif %}
-    </div>
-  </div>
-  {% endif %}
-{% endblock %}
+{% block secondary %}{% endblock %}

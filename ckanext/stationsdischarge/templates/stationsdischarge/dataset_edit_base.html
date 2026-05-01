@@ -4,15 +4,28 @@
   {% if is_edit %}{{ _('Edit Dataset') }}{% else %}{{ _('New Dataset') }}{% endif %}
 {% endblock %}
 
+{% block breadcrumb_content %}
+  <li><a href="{{ h.url_for('hydro_datasets.ds_index') }}">{{ _('Datasets') }}</a></li>
+  <li class="active">{% if is_edit %}{{ _('Edit') }}{% else %}{{ _('New') }}{% endif %}</li>
+{% endblock %}
+
 {% block primary_content_inner %}
-  <h1>
-    {% if is_edit %}
-      <i class="fa fa-pencil"></i> {{ _('Edit Dataset') }}
-      {% if data.title %} — {{ data.title }}{% endif %}
-    {% else %}
-      <i class="fa fa-plus"></i> {{ _('New Station Dataset') }}
-    {% endif %}
-  </h1>
+  <div class="sf-page-header">
+    <h1>
+      {% if is_edit %}
+        <i class="fa fa-pencil"></i> {{ _('Edit Dataset') }}
+        {% if data.title %} — {{ data.title }}{% endif %}
+      {% else %}
+        <i class="fa fa-plus"></i> {{ _('New Station Dataset') }}
+      {% endif %}
+    </h1>
+    <p class="sf-page-subtitle">
+      {{ _('Create a dataset to group stations together. You can then export the grouped stations as GeoJSON or CSV.') }}
+    </p>
+    <a href="{{ h.url_for('hydro_datasets.ds_index') }}" class="btn btn-default">
+      <i class="fa fa-arrow-left"></i> {{ _('Back to Datasets') }}
+    </a>
+  </div>
 
   {% snippet "stationsdischarge/dataset_form.html",
      data=data, errors=errors, error_summary=error_summary,
@@ -20,22 +33,5 @@
      form_action=form_action, is_edit=is_edit %}
 {% endblock %}
 
-{% block secondary_content %}
-  <div class="module module-narrow module-shallow">
-    <h2 class="module-heading">
-      <i class="fa fa-arrow-left"></i>
-      <a href="{{ h.url_for('hydro_datasets.ds_index') }}">{{ _('Back to Datasets') }}</a>
-    </h2>
-  </div>
-
-  <div class="module module-narrow module-shallow">
-    <h2 class="module-heading">
-      <i class="fa fa-info-circle"></i>
-      {{ _('Help') }}
-    </h2>
-    <div class="module-content">
-      <p>{{ _('Create a dataset to group stations together. You can then export the grouped stations as GeoJSON or CSV.') }}</p>
-      <p>{{ _('Configure default time range and aggregation settings for telemetry exports.') }}</p>
-    </div>
-  </div>
-{% endblock %}
+{# No sidebar — full-width layout #}
+{% block secondary %}{% endblock %}

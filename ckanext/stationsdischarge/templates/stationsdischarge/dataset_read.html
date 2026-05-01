@@ -126,22 +126,5 @@
   </div>
 {% endblock %}
 
-{% block secondary_content %}
-  <div class="module module-narrow module-shallow">
-    <h2 class="module-heading">
-      <i class="fa fa-arrow-left"></i>
-      <a href="{{ h.url_for('hydro_datasets.ds_index') }}">{{ _('Back to Datasets') }}</a>
-    </h2>
-  </div>
-
-  <div class="module module-narrow module-shallow">
-    <h2 class="module-heading">
-      <i class="fa fa-link"></i>
-      {{ _('API Endpoints') }}
-    </h2>
-    <div class="module-content" style="font-size:12px;">
-      <p><a href="{{ geojson_url }}" target="_blank">GeoJSON</a></p>
-      <p><a href="{{ csv_url }}" target="_blank">CSV</a></p>
-    </div>
-  </div>
-{% endblock %}
+{# No sidebar — full-width layout #}
+{% block secondary %}{% endblock %}

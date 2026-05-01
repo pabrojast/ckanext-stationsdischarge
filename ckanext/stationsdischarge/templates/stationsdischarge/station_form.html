@@ -3,6 +3,7 @@
 {% set data = data or {} %}
 {% set errors = errors or {} %}
 {% set telemetry_keys = data.telemetry_keys or [] %}
+{% set is_sysadmin = h.is_sysadmin() %}
 
 <form class="dataset-form station-form station-form-modern" method="post" action="{{ form_action }}">
   {{ h.csrf_input() if 'csrf_input' in h }}
@@ -18,6 +19,23 @@
       </ul>
     </div>
   {% endif %}
+
+  {# ══════════════════════════════════════════════════════
+     SIMPLE / ADVANCED MODE TOGGLE
+     ══════════════════════════════════════════════════════ #}
+  <div class="sf-mode-toggle-bar">
+    <span class="sf-mode-label">{{ _('Form mode:') }}</span>
+    <div class="sf-mode-toggle">
+      <button type="button" id="btn-mode-simple" class="sf-mode-btn active">
+        <i class="fa fa-compress"></i> {{ _('Simple') }}
+      </button>
+      <button type="button" id="btn-mode-advanced" class="sf-mode-btn">
+        <i class="fa fa-expand"></i> {{ _('Advanced') }}
+      </button>
+    </div>
+    <span class="sf-mode-hint simple-hint">{{ _('Only essential fields are shown. Switch to Advanced for all options.') }}</span>
+    <span class="sf-mode-hint advanced-hint" style="display:none;">{{ _('All fields are shown. Switch to Simple for a reduced view.') }}</span>
+  </div>
 
   {# ══════════════════════════════════════════════════════
      QUICK FETCH (ThingsBoard) — top of form for fast data entry
@@ -48,12 +66,14 @@
 
       <div id="tb-fetch-status" class="alert sf-fetch-status" style="display:none;"></div>
 
-      {{ form.input('thingsboard_device_id', id='field-tb-device-id',
+      <div class="sf-advanced-field">
+        {{ form.input('thingsboard_device_id', id='field-tb-device-id',
          label=_('ThingsBoard Device ID'),
          placeholder='784f394c-42b6-11ec-81d3-0242ac130003',
          value=data.thingsboard_device_id, error=errors.thingsboard_device_id,
          attrs={'class': 'form-control sf-input'}) }}
       <p class="help-text">{{ _('Optional. Only set this if the device ID differs from the entity ID above.') }}</p>
+      </div>
     </div>
   </fieldset>
 
@@ -83,7 +103,7 @@
              placeholder=_('e.g. EST-MAIPO-001'),
              value=data.station_id, error=errors.station_id,
              attrs={'class': 'form-control sf-input'}) }}
-          <p class="help-text">{{ _('Internal identifier for this station.') }}</p>
+          <p class="help-text">{{ _('Auto-filled from ThingsBoard fetch.') }}</p>
         </div>
       </div>
 
@@ -128,14 +148,19 @@
         </div>
       </div>
 
-      {{ form.markdown('notes', id='field-notes', label=_('Description'),
-         placeholder=_('Describe the station, its purpose, equipment, etc.'),
-         value=data.notes, error=errors.notes) }}
+      {# ── Advanced fields ── #}
+      <div class="sf-advanced-field">
+        {{ form.markdown('notes', id='field-notes', label=_('Description'),
+           placeholder=_('Describe the station, its purpose, equipment, etc.'),
+           value=data.notes, error=errors.notes) }}
+      </div>
 
-      {{ form.input('tag_string', id='field-tags', label=_('Tags'),
-         placeholder=_('e.g. hydrology, water level'),
-         value=data.tag_string, error=errors.tag_string,
-         attrs={'class': 'form-control sf-input'}) }}
+      <div class="sf-advanced-field">
+        {{ form.input('tag_string', id='field-tags', label=_('Tags'),
+           placeholder=_('e.g. hydrology, water level'),
+           value=data.tag_string, error=errors.tag_string,
+           attrs={'class': 'form-control sf-input'}) }}
+      </div>
 
     </div>
   </fieldset>
@@ -164,33 +189,36 @@
         </div>
       </div>
 
-      <div class="row">
-        <div class="col-md-6">
-          {{ form.input('river_name', id='field-river-name', label=_('River / Water Body'),
-             placeholder=_('e.g. Río Maipo'),
-             value=data.river_name, error=errors.river_name,
-             attrs={'class': 'form-control sf-input'}) }}
+      {# ── Advanced location fields ── #}
+      <div class="sf-advanced-field">
+        <div class="row">
+          <div class="col-md-6">
+            {{ form.input('river_name', id='field-river-name', label=_('River / Water Body'),
+               placeholder=_('e.g. Río Maipo'),
+               value=data.river_name, error=errors.river_name,
+               attrs={'class': 'form-control sf-input'}) }}
+          </div>
+          <div class="col-md-6">
+            {{ form.input('basin_name', id='field-basin-name', label=_('Basin'),
+               placeholder=_('e.g. Maipo Basin'),
+               value=data.basin_name, error=errors.basin_name,
+               attrs={'class': 'form-control sf-input'}) }}
+          </div>
         </div>
-        <div class="col-md-6">
-          {{ form.input('basin_name', id='field-basin-name', label=_('Basin'),
-             placeholder=_('e.g. Maipo Basin'),
-             value=data.basin_name, error=errors.basin_name,
-             attrs={'class': 'form-control sf-input'}) }}
-        </div>
-      </div>
 
-      <div class="row">
-        <div class="col-md-6">
-          {{ form.input('country', id='field-country', label=_('Country'),
-             placeholder=_('e.g. Chile'),
-             value=data.country, error=errors.country,
-             attrs={'class': 'form-control sf-input'}) }}
-        </div>
-        <div class="col-md-6">
-          {{ form.input('elevation_masl', id='field-elevation', label=_('Elevation (m a.s.l.)'),
-             placeholder='842',
-             value=data.elevation_masl, error=errors.elevation_masl,
-             attrs={'class': 'form-control sf-input', 'type': 'number', 'step': 'any'}) }}
+        <div class="row">
+          <div class="col-md-6">
+            {{ form.input('country', id='field-country', label=_('Country'),
+               placeholder=_('e.g. Chile'),
+               value=data.country, error=errors.country,
+               attrs={'class': 'form-control sf-input'}) }}
+          </div>
+          <div class="col-md-6">
+            {{ form.input('elevation_masl', id='field-elevation', label=_('Elevation (m a.s.l.)'),
+               placeholder='842',
+               value=data.elevation_masl, error=errors.elevation_masl,
+               attrs={'class': 'form-control sf-input', 'type': 'number', 'step': 'any'}) }}
+          </div>
         </div>
       </div>
 
@@ -280,6 +308,11 @@
       <button type="submit" name="submission_action" value="submit" class="btn btn-primary">
         <i class="fa fa-paper-plane"></i> {{ _('Submit for Review') }}
       </button>
+      {% if is_sysadmin %}
+      <button type="submit" name="submission_action" value="publish" class="btn btn-success">
+        <i class="fa fa-check"></i> {{ _('Publish Now') }}
+      </button>
+      {% endif %}
     </div>
   </div>
 
@@ -287,6 +320,32 @@
 
 <script>
 (function() {
+  // ── Simple / Advanced mode toggle ──
+  var btnSimple = document.getElementById('btn-mode-simple');
+  var btnAdvanced = document.getElementById('btn-mode-advanced');
+  var advancedFields = document.querySelectorAll('.sf-advanced-field');
+  var hintSimple = document.querySelector('.sf-mode-hint.simple-hint');
+  var hintAdvanced = document.querySelector('.sf-mode-hint.advanced-hint');
+
+  function setMode(mode) {
+    var isSimple = mode === 'simple';
+    advancedFields.forEach(function(el) { el.style.display = isSimple ? 'none' : ''; });
+    if (btnSimple) btnSimple.classList.toggle('active', isSimple);
+    if (btnAdvanced) btnAdvanced.classList.toggle('active', !isSimple);
+    if (hintSimple) hintSimple.style.display = isSimple ? '' : 'none';
+    if (hintAdvanced) hintAdvanced.style.display = isSimple ? 'none' : '';
+    try { localStorage.setItem('stationsdischarge-form-mode', mode); } catch(e) {}
+  }
+
+  if (btnSimple) btnSimple.addEventListener('click', function() { setMode('simple'); });
+  if (btnAdvanced) btnAdvanced.addEventListener('click', function() { setMode('advanced'); });
+
+  var savedMode = null;
+  try { savedMode = localStorage.getItem('stationsdischarge-form-mode'); } catch(e) {}
+  var isEdit = {{ 'true' if is_edit else 'false' }};
+  var defaultMode = savedMode || (isEdit ? 'advanced' : 'simple');
+  setMode(defaultMode);
+
   // ── Telemetry Keys dynamic rows ──
   var container = document.getElementById('telemetry-keys-container');
   var addBtn = document.getElementById('btn-add-tk');
@@ -379,6 +438,13 @@
 
         var dev = data.device || {};
         var attrs = data.attributes || {};
+
+        // Auto-fill station_id from ThingsBoard device name
+        var stationIdField = document.getElementById('field-station-id');
+        if (stationIdField && !stationIdField.value && (dev.name || dev.label)) {
+          var rawId = (dev.label || dev.name).replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-').toUpperCase();
+          stationIdField.value = 'EST-' + rawId.substring(0, 40);
+        }
 
         if (dev.name) {
           var titleField = document.getElementById('field-title');

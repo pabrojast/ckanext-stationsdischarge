@@ -79,11 +79,5 @@
   {% endif %}
 {% endblock %}
 
-{% block secondary_content %}
-  <div class="module module-narrow module-shallow">
-    <h2 class="module-heading">
-      <i class="fa fa-arrow-left"></i>
-      <a href="{{ h.url_for('hydro_stations.index') }}">{{ _('Back to Stations') }}</a>
-    </h2>
-  </div>
-{% endblock %}
+{# No sidebar — full-width layout #}
+{% block secondary %}{% endblock %}

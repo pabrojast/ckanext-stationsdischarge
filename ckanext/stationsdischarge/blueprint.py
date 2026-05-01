@@ -98,9 +98,7 @@ def new():
 
         # Handle submission action
         submission_action = data.pop("submission_action", "draft")
-        data["submission_status"] = "draft"
-        if submission_action == "submit":
-            data["submission_status"] = "pending"
+        data["submission_action"] = submission_action
 
         try:
             station = toolkit.get_action("station_create")(context, data)

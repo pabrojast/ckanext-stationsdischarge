@@ -4,37 +4,33 @@
   {% if is_edit %}{{ _('Edit Station') }}{% else %}{{ _('New Station') }}{% endif %}
 {% endblock %}
 
+{% block breadcrumb_content %}
+  <li><a href="{{ h.url_for('hydro_stations.index') }}">{{ _('Stations') }}</a></li>
+  <li class="active">{% if is_edit %}{{ _('Edit') }}{% else %}{{ _('New') }}{% endif %}</li>
+{% endblock %}
+
 {% block primary_content_inner %}
-  <h1>
-    {% if is_edit %}
-      <i class="fa fa-pencil"></i> {{ _('Edit Station') }}
-      {% if data.title %} — {{ data.title }}{% endif %}
-    {% else %}
-      <i class="fa fa-plus"></i> {{ _('New Hydrometric Station') }}
-    {% endif %}
-  </h1>
+  <div class="sf-page-header">
+    <h1>
+      {% if is_edit %}
+        <i class="fa fa-pencil"></i> {{ _('Edit Station') }}
+        {% if data.title %} — {{ data.title }}{% endif %}
+      {% else %}
+        <i class="fa fa-plus"></i> {{ _('New Hydrometric Station') }}
+      {% endif %}
+    </h1>
+    <p class="sf-page-subtitle">
+      {{ _('Fields marked with * are required. Use the Quick Fill section to auto-populate data from ThingsBoard.') }}
+    </p>
+    <a href="{{ h.url_for('hydro_stations.index') }}" class="btn btn-default">
+      <i class="fa fa-arrow-left"></i> {{ _('Back to Stations') }}
+    </a>
+  </div>
 
   {% snippet "stationsdischarge/station_form.html",
      data=data, errors=errors, error_summary=error_summary,
      organizations=organizations, form_action=form_action, is_edit=is_edit %}
 {% endblock %}
 
-{% block secondary_content %}
-  <div class="module module-narrow module-shallow">
-    <h2 class="module-heading">
-      <i class="fa fa-arrow-left"></i>
-      <a href="{{ h.url_for('hydro_stations.index') }}">{{ _('Back to Stations') }}</a>
-    </h2>
-  </div>
-
-  <div class="module module-narrow module-shallow">
-    <h2 class="module-heading">
-      <i class="fa fa-info-circle"></i>
-      {{ _('Help') }}
-    </h2>
-    <div class="module-content">
-      <p>{{ _('Fields marked with * are required.') }}</p>
-      <p>{{ _('Use the "Fetch from ThingsBoard" button to auto-fill device metadata and available telemetry keys.') }}</p>
-    </div>
-  </div>
-{% endblock %}
+{# No sidebar — full-width layout #}
+{% block secondary %}{% endblock %}
