@@ -180,7 +180,7 @@ class HydroDataset(DomainObject, BaseModel):
     owner_org = Column(types.UnicodeText)
 
     # Default query/export settings
-    time_range = Column(types.UnicodeText, default="24h")
+    time_range = Column(types.UnicodeText, default="30d")
     agg = Column(types.UnicodeText)
     interval_ms = Column(types.Integer)
     export_format = Column(types.UnicodeText, default="geojson")

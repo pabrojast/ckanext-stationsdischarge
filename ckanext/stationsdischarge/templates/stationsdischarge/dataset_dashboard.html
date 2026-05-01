@@ -1,0 +1,381 @@
+{% extends "stationsdischarge/base.html" %}
+
+{% block subtitle %}{{ _('Dashboard') }} — {{ dataset.title }}{% endblock %}
+
+{% block styles %}
+  {{ super() }}
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    .ds-dash-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .ds-dash-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 10px 14px;
+      background: #f5f8fa;
+      border: 1px solid #e0e7ed;
+      border-radius: 6px;
+      margin-bottom: 16px;
+    }
+    .ds-dash-controls label {
+      font-weight: 600;
+      margin: 0;
+    }
+    .ds-dash-presets .btn {
+      padding: 4px 10px;
+      font-size: 12px;
+    }
+    .ds-dash-presets .btn.active {
+      background: #2c5282;
+      color: #fff;
+      border-color: #2c5282;
+    }
+    .ds-dash-map {
+      height: 420px;
+      border-radius: 6px;
+      border: 1px solid #ddd;
+      margin-bottom: 20px;
+    }
+    .ds-dash-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+      gap: 14px;
+    }
+    .ds-station-card {
+      border: 1px solid #e0e7ed;
+      border-radius: 6px;
+      background: #fff;
+      padding: 12px 14px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .ds-station-card h4 {
+      margin: 0 0 4px 0;
+      font-size: 14px;
+    }
+    .ds-station-card h4 a {
+      color: #2c5282;
+      text-decoration: none;
+    }
+    .ds-station-card .ds-station-meta {
+      font-size: 12px;
+      color: #777;
+      margin-bottom: 8px;
+    }
+    .ds-station-card .ds-station-latest {
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .ds-station-card .ds-chart-wrap {
+      position: relative;
+      height: 140px;
+    }
+    .ds-station-card .ds-status {
+      font-size: 11px;
+      color: #888;
+      font-style: italic;
+    }
+    .ds-station-card.has-error {
+      background: #fff8f8;
+      border-color: #f5c2c2;
+    }
+    .leaflet-popup-content { font-size: 12px; }
+    .leaflet-popup-content a { color: #2c5282; }
+  </style>
+{% endblock %}
+
+{% block primary_content_inner %}
+  <div class="ds-dash-header">
+    <div>
+      <h1><i class="fa fa-tachometer"></i> {{ dataset.title }}</h1>
+      {% if dataset.description %}
+        <p class="text-muted" style="margin:0;">{{ dataset.description }}</p>
+      {% endif %}
+    </div>
+    <div class="btn-group">
+      <a href="{{ h.url_for('hydro_datasets.ds_show', name=dataset.name) }}" class="btn btn-default">
+        <i class="fa fa-info-circle"></i> {{ _('Details') }}
+      </a>
+      {% if h.check_access('dataset_update', {'id': dataset.id}) %}
+        <a href="{{ h.url_for('hydro_datasets.ds_edit', name=dataset.name) }}" class="btn btn-default">
+          <i class="fa fa-pencil"></i> {{ _('Edit') }}
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="ds-dash-controls">
+    <label>{{ _('Time Range') }}:</label>
+    <div class="btn-group ds-dash-presets" id="dsPresets">
+      <button class="btn btn-default" data-tr="24h">24h</button>
+      <button class="btn btn-default" data-tr="7d">7d</button>
+      <button class="btn btn-default" data-tr="30d">30d</button>
+      <button class="btn btn-default" data-tr="90d">90d</button>
+      <button class="btn btn-default" data-tr="6m">6m</button>
+      <button class="btn btn-default" data-tr="1y">1y</button>
+    </div>
+    <span id="dsLoading" class="text-muted" style="display:none;">
+      <i class="fa fa-spinner fa-spin"></i> {{ _('Loading telemetry…') }}
+    </span>
+    <div style="margin-left:auto;">
+      <a id="dsGeojsonLink" href="{{ geojson_url }}?include_telemetry=true"
+         class="btn btn-default btn-sm" target="_blank">
+        <i class="fa fa-globe"></i> GeoJSON
+      </a>
+      <button id="dsCopyUrl" class="btn btn-default btn-sm">
+        <i class="fa fa-copy"></i> {{ _('Copy URL') }}
+      </button>
+    </div>
+  </div>
+
+  <div id="dsMap" class="ds-dash-map"></div>
+
+  {% if dataset.stations_detail %}
+    <h3 style="margin:0 0 10px 0;"><i class="fa fa-line-chart"></i> {{ _('Stations') }}</h3>
+    <div class="ds-dash-grid" id="dsCards">
+      {% for st in dataset.stations_detail %}
+        <div class="ds-station-card" data-station-name="{{ st.name }}"
+             data-lat="{{ st.latitude or '' }}" data-lon="{{ st.longitude or '' }}">
+          <h4>
+            <a href="{{ h.url_for('hydro_stations.dashboard', name=st.name) }}">
+              {{ st.title }}
+            </a>
+          </h4>
+          <div class="ds-station-meta">
+            <code>{{ st.station_id }}</code>
+            {% if st.river_name %} · {{ st.river_name }}{% endif %}
+            {% if st.country %} · {{ st.country }}{% endif %}
+          </div>
+          <div class="ds-station-latest"></div>
+          <div class="ds-chart-wrap">
+            <canvas></canvas>
+          </div>
+          <div class="ds-status">{{ _('Waiting…') }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="alert alert-info">
+      {{ _('This group has no stations yet.') }}
+      {% if h.check_access('dataset_update', {'id': dataset.id}) %}
+        <a href="{{ h.url_for('hydro_datasets.ds_edit', name=dataset.name) }}">
+          {{ _('Add some →') }}
+        </a>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block secondary %}{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script>
+  (function () {
+    var DEFAULT_TR = {{ (dataset.time_range or '30d') | tojson }};
+    var GEOJSON_BASE = {{ geojson_url | tojson }};
+    var STATION_BASE = {{ h.url_for('hydro_stations.telemetry', name='__N__') | tojson }};
+    var STATION_DASH = {{ h.url_for('hydro_stations.dashboard', name='__N__') | tojson }};
+    var I18N = {
+      no_data: {{ _('No data') | tojson }},
+      error: {{ _('Error loading') | tojson }},
+      loading: {{ _('Loading…') | tojson }},
+      latest: {{ _('Latest') | tojson }},
+    };
+
+    // ── Map setup ─────────────────────────────────────
+    var map = L.map('dsMap');
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(map);
+
+    var markers = {};
+    var bounds = [];
+    document.querySelectorAll('.ds-station-card').forEach(function (card) {
+      var lat = parseFloat(card.dataset.lat);
+      var lon = parseFloat(card.dataset.lon);
+      if (isNaN(lat) || isNaN(lon)) return;
+      var name = card.dataset.stationName;
+      var title = card.querySelector('h4 a').textContent.trim();
+      var dashUrl = STATION_DASH.replace('__N__', encodeURIComponent(name));
+      var marker = L.marker([lat, lon]).addTo(map).bindPopup(
+        '<strong>' + title + '</strong><br>' +
+        '<a href="' + dashUrl + '">' + I18N.latest + ' →</a>'
+      );
+      markers[name] = marker;
+      bounds.push([lat, lon]);
+    });
+    if (bounds.length === 1) map.setView(bounds[0], 9);
+    else if (bounds.length > 1) map.fitBounds(bounds, { padding: [30, 30] });
+    else map.setView([0, 0], 2);
+
+    // ── Chart instances ──────────────────────────────
+    var charts = {};
+
+    function fmtTs(ms) {
+      try { return new Date(parseInt(ms, 10)).toISOString().replace('T', ' ').slice(0, 16) + 'Z'; }
+      catch (e) { return ms; }
+    }
+
+    function renderCard(card, telemetry) {
+      var canvas = card.querySelector('canvas');
+      var status = card.querySelector('.ds-status');
+      var latestDiv = card.querySelector('.ds-station-latest');
+      card.classList.remove('has-error');
+
+      var keys = Object.keys(telemetry || {});
+      if (!keys.length) {
+        status.textContent = I18N.no_data;
+        latestDiv.innerHTML = '';
+        return;
+      }
+
+      // Build datasets — one line per key
+      var palette = ['#2c5282', '#dd6b20', '#38a169', '#805ad5', '#d53f8c', '#319795'];
+      var datasets = keys.map(function (k, i) {
+        var pts = (telemetry[k] || []).map(function (p) {
+          return { x: parseInt(p.ts, 10), y: parseFloat(p.value) };
+        }).filter(function (p) { return !isNaN(p.x) && !isNaN(p.y); })
+          .sort(function (a, b) { return a.x - b.x; });
+        return {
+          label: k,
+          data: pts,
+          borderColor: palette[i % palette.length],
+          backgroundColor: palette[i % palette.length],
+          fill: false,
+          tension: 0.2,
+          pointRadius: 0,
+          borderWidth: 1.5,
+        };
+      });
+
+      // Latest line
+      var latestParts = keys.map(function (k) {
+        var arr = telemetry[k] || [];
+        if (!arr.length) return null;
+        var sorted = arr.slice().sort(function (a, b) {
+          return parseInt(b.ts, 10) - parseInt(a.ts, 10);
+        });
+        var p = sorted[0];
+        return '<strong>' + k + '</strong>: ' +
+               parseFloat(p.value).toFixed(2) +
+               ' <small class="text-muted">(' + fmtTs(p.ts) + ')</small>';
+      }).filter(Boolean);
+      latestDiv.innerHTML = latestParts.join(' &nbsp;·&nbsp; ');
+
+      var stationName = card.dataset.stationName;
+      if (charts[stationName]) charts[stationName].destroy();
+      charts[stationName] = new Chart(canvas, {
+        type: 'line',
+        data: { datasets: datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: keys.length > 1, position: 'bottom',
+                      labels: { boxWidth: 8, font: { size: 10 } } },
+            tooltip: { enabled: true },
+          },
+          scales: {
+            x: {
+              type: 'time',
+              ticks: { maxRotation: 0, autoSkip: true, font: { size: 9 } },
+            },
+            y: { ticks: { font: { size: 9 } } },
+          },
+        },
+      });
+      status.textContent = '';
+    }
+
+    function loadStation(card, timeRange) {
+      var name = card.dataset.stationName;
+      var status = card.querySelector('.ds-status');
+      status.textContent = I18N.loading;
+      var url = STATION_BASE.replace('__N__', encodeURIComponent(name)) +
+                '?time_range=' + encodeURIComponent(timeRange);
+      return fetch(url, { credentials: 'same-origin' })
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(function (data) {
+          if (data.error) throw new Error(JSON.stringify(data.error));
+          renderCard(card, data.telemetry || {});
+        })
+        .catch(function (err) {
+          card.classList.add('has-error');
+          status.textContent = I18N.error + ': ' + err.message;
+        });
+    }
+
+    function loadAll(timeRange) {
+      var loading = document.getElementById('dsLoading');
+      loading.style.display = '';
+      var cards = Array.prototype.slice.call(
+        document.querySelectorAll('.ds-station-card')
+      );
+      // Sequential load to avoid hammering ThingsBoard
+      var i = 0;
+      function next() {
+        if (i >= cards.length) {
+          loading.style.display = 'none';
+          return;
+        }
+        loadStation(cards[i++], timeRange).then(next, next);
+      }
+      next();
+    }
+
+    // ── Preset buttons ───────────────────────────────
+    function setActive(tr) {
+      document.querySelectorAll('#dsPresets .btn').forEach(function (b) {
+        b.classList.toggle('active', b.dataset.tr === tr);
+      });
+      var link = document.getElementById('dsGeojsonLink');
+      link.href = GEOJSON_BASE + '?include_telemetry=true&time_range=' +
+                  encodeURIComponent(tr);
+    }
+
+    document.getElementById('dsPresets').addEventListener('click', function (e) {
+      var btn = e.target.closest('button[data-tr]');
+      if (!btn) return;
+      var tr = btn.dataset.tr;
+      setActive(tr);
+      loadAll(tr);
+    });
+
+    document.getElementById('dsCopyUrl').addEventListener('click', function () {
+      var url = document.getElementById('dsGeojsonLink').href;
+      var abs = new URL(url, window.location.origin).toString();
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(abs);
+        this.innerHTML = '<i class="fa fa-check"></i> {{ _("Copied") }}';
+        var self = this;
+        setTimeout(function () {
+          self.innerHTML = '<i class="fa fa-copy"></i> {{ _("Copy URL") }}';
+        }, 1500);
+      } else {
+        window.prompt('GeoJSON URL', abs);
+      }
+    });
+
+    // Initial load
+    setActive(DEFAULT_TR);
+    loadAll(DEFAULT_TR);
+  })();
+  </script>
+{% endblock %}

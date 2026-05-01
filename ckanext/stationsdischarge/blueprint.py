@@ -642,6 +642,30 @@ def ds_delete(name):
     return toolkit.render("stationsdischarge/dataset_confirm_delete.html", extra_vars=extra_vars)
 
 
+# ── DASHBOARD ────────────────────────────────────────
+
+@hydro_datasets.route("/<name>/dashboard", methods=["GET"])
+def ds_dashboard(name):
+    """Map + per-station mini-charts for a dataset."""
+    context = _get_context()
+
+    try:
+        ds = toolkit.get_action("dataset_show")(context, {"id": name})
+    except toolkit.ObjectNotFound:
+        toolkit.abort(404, "Dataset not found")
+    except toolkit.NotAuthorized:
+        toolkit.abort(403, "Not authorized to view this dataset")
+
+    extra_vars = {
+        "dataset": ds,
+        "geojson_url": toolkit.url_for("hydro_datasets.ds_geojson", name=ds["name"]),
+        "csv_url": toolkit.url_for("hydro_datasets.ds_csv", name=ds["name"]),
+    }
+    return toolkit.render(
+        "stationsdischarge/dataset_dashboard.html", extra_vars=extra_vars
+    )
+
+
 # ── GEOJSON ──────────────────────────────────────────
 
 @hydro_datasets.route("/<name>/geojson", methods=["GET"])
@@ -650,6 +674,12 @@ def ds_geojson(name):
     data_dict = {
         "id": name,
         "include_telemetry": toolkit.request.args.get("include_telemetry", ""),
+        "time_range": toolkit.request.args.get("time_range", ""),
+        "start_ts": toolkit.request.args.get("start_ts", ""),
+        "end_ts": toolkit.request.args.get("end_ts", ""),
+        "agg": toolkit.request.args.get("agg", ""),
+        "interval": toolkit.request.args.get("interval", ""),
+        "limit": toolkit.request.args.get("limit", ""),
     }
 
     try:

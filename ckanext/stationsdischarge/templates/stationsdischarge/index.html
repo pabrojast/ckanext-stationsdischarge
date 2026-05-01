@@ -5,11 +5,21 @@
 {% block primary_content_inner %}
   <div class="station-list-header">
     <h1><i class="fa fa-tachometer"></i> {{ _('Hydrometric Stations') }}</h1>
-    {% if h.check_access('station_create') %}
-      <a href="{{ h.url_for('hydro_stations.new') }}" class="btn btn-primary">
-        <i class="fa fa-plus"></i> {{ _('Add Station') }}
+    <div class="station-list-actions">
+      <a href="{{ h.url_for('hydro_datasets.ds_index') }}" class="btn btn-default">
+        <i class="fa fa-folder-open"></i> {{ _('Station Groups') }}
       </a>
-    {% endif %}
+      {% if h.check_access('dataset_create') %}
+        <a href="{{ h.url_for('hydro_datasets.ds_new') }}" class="btn btn-default">
+          <i class="fa fa-object-group"></i> {{ _('Group Stations') }}
+        </a>
+      {% endif %}
+      {% if h.check_access('station_create') %}
+        <a href="{{ h.url_for('hydro_stations.new') }}" class="btn btn-primary">
+          <i class="fa fa-plus"></i> {{ _('Add Station') }}
+        </a>
+      {% endif %}
+    </div>
   </div>
 
   {# Filters #}

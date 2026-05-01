@@ -3,13 +3,23 @@
 {% block subtitle %}{{ _('Station Datasets') }}{% endblock %}
 
 {% block primary_content_inner %}
-  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-    <h1><i class="fa fa-folder-open"></i> {{ _('Station Datasets') }}</h1>
-    {% if h.check_access('dataset_create') %}
-      <a href="{{ h.url_for('hydro_datasets.ds_new') }}" class="btn btn-primary">
-        <i class="fa fa-plus"></i> {{ _('New Dataset') }}
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:10px;">
+    <div>
+      <h1 style="margin-bottom:4px;"><i class="fa fa-folder-open"></i> {{ _('Station Groups') }}</h1>
+      <p class="text-muted" style="margin:0;">
+        {{ _('Group stations together to share a dashboard and a configurable GeoJSON for Terria.') }}
+      </p>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <a href="{{ h.url_for('hydro_stations.index') }}" class="btn btn-default">
+        <i class="fa fa-arrow-left"></i> {{ _('Stations') }}
       </a>
-    {% endif %}
+      {% if h.check_access('dataset_create') %}
+        <a href="{{ h.url_for('hydro_datasets.ds_new') }}" class="btn btn-primary">
+          <i class="fa fa-plus"></i> {{ _('New Group') }}
+        </a>
+      {% endif %}
+    </div>
   </div>
 
   {# Search bar #}
@@ -51,6 +61,10 @@
           <td>{{ ds.time_range or '24h' }}</td>
           <td>{{ ds.modified[:10] if ds.modified else '—' }}</td>
           <td>
+            <a href="{{ h.url_for('hydro_datasets.ds_dashboard', name=ds.name) }}"
+               class="btn btn-xs btn-primary" title="{{ _('Dashboard') }}">
+              <i class="fa fa-tachometer"></i>
+            </a>
             <a href="{{ h.url_for('hydro_datasets.ds_geojson', name=ds.name) }}" class="btn btn-xs btn-default"
                target="_blank" title="{{ _('GeoJSON') }}">
               <i class="fa fa-globe"></i>

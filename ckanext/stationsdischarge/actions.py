@@ -863,7 +863,7 @@ def dataset_create(context, data_dict):
         name=data["name"],
         description=data.get("description", ""),
         owner_org=data.get("owner_org", ""),
-        time_range=data.get("time_range", "24h"),
+        time_range=data.get("time_range") or "30d",
         agg=data.get("agg", ""),
         interval_ms=data.get("interval_ms"),
         export_format=data.get("export_format", "geojson"),
@@ -1016,15 +1016,48 @@ def dataset_list(context, data_dict):
 def dataset_geojson(context, data_dict):
     """Return a dataset's stations as a GeoJSON FeatureCollection.
 
+    By default returns only station metadata (lightweight, ThingsBoard not
+    queried). Pass ``include_telemetry=true`` to fetch telemetry from
+    ThingsBoard for each station.
+
+    The time window applied to telemetry is taken from the dataset's stored
+    ``time_range`` / ``agg`` / ``interval_ms`` settings, but each request can
+    override them via query parameters (``time_range``, ``start_ts``,
+    ``end_ts``, ``agg``, ``interval``, ``limit``).
+
+    Each station feature exposes the latest value of every key as a flat
+    property (so Terria pop-ups render cleanly) plus the full series in
+    ``properties.series[<key>]`` as ``[[ts_ms, value], ...]`` pairs.
+
     :param id: Dataset UUID or name (required)
-    :param include_telemetry: Include latest telemetry (optional)
+    :param include_telemetry: Include telemetry from ThingsBoard ("true"/"false")
+    :param time_range: Override dataset's stored preset (1h/24h/7d/30d/...)
+    :param start_ts: Override start timestamp (ms)
+    :param end_ts: Override end timestamp (ms)
+    :param agg: Override aggregation (AVG/MIN/MAX/SUM/COUNT)
+    :param interval: Override aggregation interval (ms)
+    :param limit: Max points per key
     :returns: GeoJSON FeatureCollection
     """
     ds_data = dataset_show(context, data_dict)
     toolkit.check_access("dataset_geojson", context, data_dict)
 
     include_telemetry = str(data_dict.get("include_telemetry", "")).lower() == "true"
-    tb_url, tb_api_key = None, None
+
+    tr_params = {}
+    if include_telemetry:
+        # Layer query overrides on top of the dataset's stored config.
+        tr_params = {
+            "time_range": data_dict.get("time_range") or ds_data.get("time_range"),
+            "agg": data_dict.get("agg") or ds_data.get("agg"),
+            "interval": data_dict.get("interval") or ds_data.get("interval_ms"),
+            "start_ts": data_dict.get("start_ts"),
+            "end_ts": data_dict.get("end_ts"),
+            "limit": data_dict.get("limit"),
+        }
+    tr = _resolve_time_range(tr_params) if include_telemetry else None
+
+    tb_url, tb_api_key = (None, None)
     if include_telemetry:
         tb_url, tb_api_key = _get_tb_config()
 
@@ -1051,15 +1084,57 @@ def dataset_geojson(context, data_dict):
             entity_id = station_dict.get("thingsboard_entity_id")
             keys_list = station_dict.get("telemetry_keys", [])
             tel_keys = ",".join(k["telemetry_key"] for k in keys_list)
+            key_meta = {k["telemetry_key"]: k for k in keys_list}
             if entity_id and tel_keys:
                 try:
-                    tel = _fetch_telemetry(tb_url, tb_api_key, entity_id, tel_keys, limit=1)
+                    tel = _fetch_telemetry(
+                        tb_url, tb_api_key, entity_id, tel_keys,
+                        start_ts=tr["start_ts"],
+                        end_ts=tr["end_ts"],
+                        limit=tr["limit"],
+                        agg=tr["agg"],
+                        interval=tr["interval"],
+                    )
                     latest = {}
-                    for k, v in tel.items():
-                        if v:
-                            latest[k] = {"value": float(v[0].get("value", 0)), "ts": v[0].get("ts")}
+                    series = {}
+                    for k, points in tel.items():
+                        if not points:
+                            continue
+                        # ThingsBoard returns newest-first; sort ascending by ts
+                        ordered = sorted(
+                            points,
+                            key=lambda p: int(p.get("ts", 0)),
+                        )
+                        try:
+                            last_val = float(ordered[-1].get("value", 0))
+                        except (ValueError, TypeError):
+                            last_val = ordered[-1].get("value")
+                        latest[k] = {
+                            "value": last_val,
+                            "ts": ordered[-1].get("ts"),
+                        }
+                        # Flat property for Terria pop-ups (uses label + unit)
+                        meta = key_meta.get(k, {})
+                        flat_name = meta.get("label") or k
+                        if meta.get("unit"):
+                            flat_name = "%s (%s)" % (flat_name, meta["unit"])
+                        props[flat_name] = last_val
+                        # Compact series array for Terria charts
+                        compact = []
+                        for pt in ordered:
+                            try:
+                                compact.append([
+                                    int(pt.get("ts")),
+                                    float(pt.get("value", 0)),
+                                ])
+                            except (ValueError, TypeError):
+                                pass
+                        if compact:
+                            series[k] = compact
                     if latest:
                         props["telemetry"] = latest
+                    if series:
+                        props["series"] = series
                 except Exception as e:
                     log.debug("Dataset GeoJSON: skipping telemetry for %s: %s",
                               station_dict.get("name"), e)
@@ -1070,7 +1145,7 @@ def dataset_geojson(context, data_dict):
             "properties": props,
         })
 
-    return {
+    result = {
         "type": "FeatureCollection",
         "features": features,
         "dataset": {
@@ -1079,6 +1154,16 @@ def dataset_geojson(context, data_dict):
             "name": ds_data["name"],
         },
     }
+    if include_telemetry and tr:
+        result["telemetry_window"] = {
+            "time_range": tr["time_range"],
+            "start_ts": tr["start_ts"],
+            "end_ts": tr["end_ts"],
+            "agg": tr["agg"],
+            "interval_ms": tr["interval"],
+            "limit": tr["limit"],
+        }
+    return result
 
 
 def dataset_csv(context, data_dict):

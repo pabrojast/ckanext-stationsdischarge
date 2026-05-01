@@ -11,8 +11,11 @@
 
     {# Action buttons #}
     <div class="btn-group">
+      <a href="{{ h.url_for('hydro_datasets.ds_dashboard', name=dataset.name) }}" class="btn btn-primary">
+        <i class="fa fa-tachometer"></i> {{ _('Open Dashboard') }}
+      </a>
       {% if h.check_access('dataset_update', {'id': dataset.id}) %}
-        <a href="{{ h.url_for('hydro_datasets.ds_edit', name=dataset.name) }}" class="btn btn-primary">
+        <a href="{{ h.url_for('hydro_datasets.ds_edit', name=dataset.name) }}" class="btn btn-default">
           <i class="fa fa-pencil"></i> {{ _('Edit') }}
         </a>
       {% endif %}
@@ -25,11 +28,11 @@
 
     {# Export links #}
     <div style="margin-top: 10px;">
-      <a href="{{ geojson_url }}" class="btn btn-default btn-sm" target="_blank" title="{{ _('GeoJSON') }}">
+      <a href="{{ geojson_url }}" class="btn btn-default btn-sm" target="_blank" title="{{ _('GeoJSON (metadata only)') }}">
         <i class="fa fa-globe"></i> GeoJSON
       </a>
       <a href="{{ geojson_url }}?include_telemetry=true" class="btn btn-default btn-sm" target="_blank"
-         title="{{ _('GeoJSON with telemetry') }}">
+         title="{{ _('GeoJSON with telemetry (uses dataset default time range)') }}">
         <i class="fa fa-globe"></i> GeoJSON + {{ _('Telemetry') }}
       </a>
       <a href="{{ csv_url }}" class="btn btn-default btn-sm" title="{{ _('CSV') }}">
@@ -41,6 +44,68 @@
       </a>
     </div>
   </div>
+
+  {# ── GeoJSON URL builder for Terria ── #}
+  <div class="station-detail-section" id="ds-geojson-builder">
+    <h2><i class="fa fa-link"></i> {{ _('GeoJSON URL for Terria') }}</h2>
+    <p class="text-muted" style="margin-bottom:10px;">
+      {{ _('Pick a time window, copy the URL, and paste it as a GeoJSON catalog item in Terria. Telemetry is fetched from ThingsBoard on each request, so prefer aggregated/long windows for many stations.') }}
+    </p>
+    <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+      <label style="margin:0; font-weight:600;">{{ _('Time Range') }}:</label>
+      <select id="ds-tr" class="form-control" style="width:auto; display:inline-block;">
+        {% set tr = dataset.time_range or '30d' %}
+        <option value="">{{ _('— No time window (latest only) —') }}</option>
+        <option value="24h" {% if tr == '24h' %}selected{% endif %}>24 {{ _('hours') }}</option>
+        <option value="7d"  {% if tr == '7d'  %}selected{% endif %}>7 {{ _('days') }}</option>
+        <option value="30d" {% if tr == '30d' %}selected{% endif %}>30 {{ _('days') }}</option>
+        <option value="90d" {% if tr == '90d' %}selected{% endif %}>90 {{ _('days') }}</option>
+        <option value="6m"  {% if tr == '6m'  %}selected{% endif %}>6 {{ _('months') }}</option>
+        <option value="1y"  {% if tr == '1y'  %}selected{% endif %}>1 {{ _('year') }}</option>
+      </select>
+      <label style="margin:0;">
+        <input type="checkbox" id="ds-tel" checked />
+        {{ _('Include telemetry') }}
+      </label>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:10px;">
+      <input type="text" id="ds-url" class="form-control" readonly style="flex:1; font-family:monospace; font-size:12px;" />
+      <button class="btn btn-default" id="ds-copy"><i class="fa fa-copy"></i> {{ _('Copy') }}</button>
+      <a class="btn btn-default" id="ds-open" target="_blank"><i class="fa fa-external-link"></i> {{ _('Open') }}</a>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    var base = {{ geojson_url | tojson }};
+    var trSel = document.getElementById('ds-tr');
+    var telCb = document.getElementById('ds-tel');
+    var urlInput = document.getElementById('ds-url');
+    var openLink = document.getElementById('ds-open');
+    var copyBtn = document.getElementById('ds-copy');
+
+    function rebuild() {
+      var params = [];
+      if (telCb.checked) params.push('include_telemetry=true');
+      if (trSel.value) params.push('time_range=' + encodeURIComponent(trSel.value));
+      var rel = base + (params.length ? '?' + params.join('&') : '');
+      var abs = new URL(rel, window.location.origin).toString();
+      urlInput.value = abs;
+      openLink.href = abs;
+    }
+    trSel.addEventListener('change', rebuild);
+    telCb.addEventListener('change', rebuild);
+    copyBtn.addEventListener('click', function () {
+      urlInput.select();
+      if (navigator.clipboard) navigator.clipboard.writeText(urlInput.value);
+      else document.execCommand('copy');
+      var orig = copyBtn.innerHTML;
+      copyBtn.innerHTML = '<i class="fa fa-check"></i> {{ _("Copied") }}';
+      setTimeout(function () { copyBtn.innerHTML = orig; }, 1500);
+    });
+    rebuild();
+  })();
+  </script>
 
   {# ── Export Settings ── #}
   <div class="station-detail-section">
