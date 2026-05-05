@@ -662,19 +662,27 @@ def station_telemetry(context, data_dict):
         )
 
     entity_id = station.thingsboard_entity_id
-    if not entity_id:
-        raise toolkit.ValidationError(
-            {"thingsboard_entity_id": ["Station has no ThingsBoard entity configured"]}
-        )
 
     keys = data_dict.get("keys")
     if not keys:
         keys_list = station_db.StationTelemetryKey.get_by_station(station.id)
         keys = ",".join(k.telemetry_key for k in keys_list) if keys_list else ""
-    if not keys:
-        raise toolkit.ValidationError(
-            {"telemetry_keys": ["Station has no telemetry keys configured"]}
-        )
+
+    # If the station has nothing to query, return an empty result instead of
+    # a 400. Dashboards then render an empty-state instead of an error toast.
+    if not entity_id or not keys:
+        return {
+            "station_id": station.station_id,
+            "station_name": station.name,
+            "thingsboard_entity_id": entity_id,
+            "telemetry_keys": keys,
+            "telemetry": {},
+            "warning": (
+                "Station has no ThingsBoard entity configured"
+                if not entity_id else
+                "Station has no telemetry keys configured"
+            ),
+        }
 
     tr = _resolve_time_range(data_dict)
 
