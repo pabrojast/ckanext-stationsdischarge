@@ -223,7 +223,11 @@ Authorization: YOUR_API_KEY
   "time_range": "24h",
   "agg": "AVG",
   "interval_ms": 3600000,
-  "export_format": "geojson"
+  "export_format": "geojson",
+
+  "geojson_mode": "expanded",
+  "time_property": "date",
+  "display_keys": "waterLevel,temperature"
 }
 ```
 
@@ -271,12 +275,49 @@ Authorization: YOUR_API_KEY
 
 ### Export dataset GeoJSON
 
+Two output shapes are supported. Pick one with `mode` (or set the dataset's
+stored `geojson_mode`):
+
+- **`compact`** (default): one Feature per station with the full series in
+  `properties.series[<key>]` as `[[ts_ms, value], ...]` pairs and latest
+  values flattened for pop-ups. This is what the built-in dashboard reads.
+- **`expanded`**: one Feature per `(station, timestamp)`. Drop the URL
+  straight into TerriaJS as a GeoJSON catalog item with `timeProperty: "date"`
+  and the time slider scrubs through the values. This is the simplest way
+  to get an animated map of water-level / meteorological readings in Terria.
+
 ```http
 POST /api/3/action/dataset_geojson
 Content-Type: application/json
 
-{"id": "cuenca-del-maipo", "include_telemetry": true}
+{
+  "id": "cuenca-del-maipo",
+  "mode": "expanded",
+  "time_range": "30d",
+  "keys": "waterLevel,temperature"
+}
 ```
+
+The same endpoint is exposed as `GET /hydro-dataset/<name>/geojson?mode=expanded&time_range=30d`,
+which is the URL you paste into TerriaJS.
+
+#### TerriaJS catalog item
+
+```json
+{
+  "type": "geojson",
+  "name": "Cuenca del Maipo",
+  "url": "https://your-ckan/hydro-dataset/cuenca-del-maipo/geojson?mode=expanded&time_range=30d",
+  "timeProperty": "date",
+  "forceCesiumPrimitives": true,
+  "featureInfoTemplate": {
+    "template": "<h4>{{title}}</h4><p>{{date}}</p><p>Water level: {{waterLevel}} m</p>"
+  }
+}
+```
+
+The dataset detail page (`/hydro-dataset/<name>`) has an interactive builder
+that emits this snippet for you with the right URL and timestamp property.
 
 ### Export dataset CSV
 

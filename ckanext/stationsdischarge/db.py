@@ -185,6 +185,18 @@ class HydroDataset(DomainObject, BaseModel):
     interval_ms = Column(types.Integer)
     export_format = Column(types.UnicodeText, default="geojson")
 
+    # GeoJSON shape used by /geojson endpoint:
+    # - "compact": one Feature per station, full series in properties.series
+    #   (powers the built-in dashboard)
+    # - "expanded": one Feature per (station, timestamp) — Terria animates this
+    #   via timeProperty for the time slider
+    geojson_mode = Column(types.UnicodeText, default="compact")
+    # Property name carrying the ISO 8601 timestamp in expanded mode
+    time_property = Column(types.UnicodeText, default="date")
+    # Comma-separated whitelist of telemetry keys to include in exports.
+    # Empty → all keys configured on each station.
+    display_keys = Column(types.UnicodeText)
+
     user_id = Column(types.UnicodeText)
     created = Column(types.DateTime, default=datetime.datetime.utcnow)
     modified = Column(types.DateTime, default=datetime.datetime.utcnow)
@@ -256,7 +268,9 @@ class HydroDatasetStation(DomainObject, BaseModel):
 
 
 def init_db():
-    """Create extension tables if they don't exist."""
+    """Create extension tables if they don't exist, and add new columns
+    when the schema in code is ahead of the database (lightweight migration).
+    """
     import sqlalchemy as sa
 
     try:
@@ -270,6 +284,33 @@ def init_db():
                 log.info("stationsdischarge: Created table '%s'", tbl.__tablename__)
             else:
                 log.debug("stationsdischarge: Table '%s' already exists", tbl.__tablename__)
+                _add_missing_columns(engine, inspector, tbl)
     except Exception as e:
         log.exception("stationsdischarge: Error initializing DB: %s", e)
         raise
+
+
+def _add_missing_columns(engine, inspector, tbl):
+    """ALTER TABLE … ADD COLUMN for any column declared in the model but
+    absent from the live table. PostgreSQL only — matches CKAN's stack."""
+    import sqlalchemy as sa
+
+    db_cols = {c["name"] for c in inspector.get_columns(tbl.__tablename__)}
+    for col in tbl.__table__.columns:
+        if col.name in db_cols:
+            continue
+        col_type = col.type.compile(dialect=engine.dialect)
+        default_clause = ""
+        if col.default is not None and getattr(col.default, "is_scalar", False):
+            val = col.default.arg
+            if isinstance(val, str):
+                default_clause = " DEFAULT '%s'" % val.replace("'", "''")
+            elif isinstance(val, (int, float)):
+                default_clause = " DEFAULT %s" % val
+        stmt = 'ALTER TABLE %s ADD COLUMN %s %s%s' % (
+            tbl.__tablename__, col.name, col_type, default_clause,
+        )
+        with engine.begin() as conn:
+            conn.execute(sa.text(stmt))
+        log.info("stationsdischarge: Added column '%s.%s'",
+                 tbl.__tablename__, col.name)

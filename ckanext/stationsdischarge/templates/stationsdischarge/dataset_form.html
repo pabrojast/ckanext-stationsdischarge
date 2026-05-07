@@ -105,6 +105,78 @@
     </div>
   </fieldset>
 
+  {# ── Section 2b: GeoJSON / TerriaJS settings ── #}
+  <fieldset>
+    <legend><i class="fa fa-globe"></i> {{ _('GeoJSON / TerriaJS Settings') }}</legend>
+    <p class="text-muted" style="margin-bottom:14px;">
+      {{ _('Controls how the GeoJSON endpoint shapes the data. Pick "Time-series (animated)" to drop the URL straight into TerriaJS as a time-aware catalog item — the time slider will scrub through the values.') }}
+    </p>
+
+    <div class="form-group">
+      <label for="geojson_mode">{{ _('GeoJSON Output Mode') }}</label>
+      <select id="geojson_mode" name="geojson_mode" class="form-control">
+        {% set gm = data.geojson_mode or 'compact' %}
+        <option value="compact" {% if gm == 'compact' %}selected{% endif %}>
+          {{ _('Compact — one Feature per station, full series in properties (built-in dashboard)') }}
+        </option>
+        <option value="expanded" {% if gm == 'expanded' %}selected{% endif %}>
+          {{ _('Time-series (animated) — one Feature per timestamp (TerriaJS time slider)') }}
+        </option>
+      </select>
+    </div>
+
+    <div class="form-group" id="time-property-group"
+         style="{% if (data.geojson_mode or 'compact') != 'expanded' %}display:none;{% endif %}">
+      <label for="time_property">{{ _('Timestamp Property Name') }}</label>
+      <input type="text" id="time_property" name="time_property" class="form-control"
+             value="{{ data.time_property or 'date' }}"
+             pattern="[A-Za-z_][A-Za-z0-9_]*" maxlength="64" />
+      <span class="help-text">
+        {{ _('Name of the GeoJSON property that holds the ISO 8601 timestamp. Use this in TerriaJS as') }}
+        <code>"timeProperty"</code>. {{ _('Default:') }} <code>date</code>.
+      </span>
+    </div>
+
+    <div class="form-group">
+      <label>{{ _('Telemetry Keys to Export') }}</label>
+      <span class="help-text" style="display:block; margin-bottom:8px;">
+        {{ _('Pick which measurements appear in the GeoJSON. Leave all unchecked to include every key configured on each station.') }}
+      </span>
+
+      {# Collect the union of telemetry keys across all stations available to this user #}
+      {% set all_keys = {} %}
+      {% for st in all_stations %}
+        {% for tk in (st.telemetry_keys or []) %}
+          {% if tk.telemetry_key and tk.telemetry_key not in all_keys %}
+            {% set _ = all_keys.update({tk.telemetry_key: tk}) %}
+          {% endif %}
+        {% endfor %}
+      {% endfor %}
+
+      {% set selected_keys = (data.display_keys or '').split(',') | map('trim') | list %}
+
+      <div id="ds-display-keys" style="border:1px solid #ddd; border-radius:4px;
+           padding:8px; max-height:220px; overflow-y:auto; background:#fcfcfc;">
+        {% if all_keys %}
+          {% for key, meta in all_keys.items() %}
+            <label style="display:block; padding:4px 6px; margin:0; cursor:pointer;">
+              <input type="checkbox" name="display_keys_chk" value="{{ key }}"
+                     {% if key in selected_keys %}checked{% endif %} />
+              <code>{{ key }}</code>
+              {% if meta.label %} — {{ meta.label }}{% endif %}
+              {% if meta.unit %} <small class="text-muted">({{ meta.unit }})</small>{% endif %}
+            </label>
+          {% endfor %}
+        {% else %}
+          <em class="text-muted">{{ _('No telemetry keys discovered yet — add them on the station pages first.') }}</em>
+        {% endif %}
+      </div>
+      {# Hidden field carries the actual CSV submitted to the action #}
+      <input type="hidden" id="display_keys" name="display_keys"
+             value="{{ data.display_keys or '' }}" />
+    </div>
+  </fieldset>
+
   {# ── Section 3: Station Picker ── #}
   <fieldset>
     <legend><i class="fa fa-map-marker"></i> {{ _('Stations') }}</legend>
@@ -157,15 +229,48 @@
 
 <script>
 (function() {
+  // ── Station picker live filter ─────────────────────
   var search = document.getElementById('ds-station-search');
-  if (!search) return;
-  search.addEventListener('input', function() {
-    var q = this.value.toLowerCase();
-    var items = document.querySelectorAll('.ds-station-item');
-    items.forEach(function(item) {
-      var text = item.textContent.toLowerCase();
-      item.style.display = text.indexOf(q) !== -1 ? '' : 'none';
+  if (search) {
+    search.addEventListener('input', function() {
+      var q = this.value.toLowerCase();
+      var items = document.querySelectorAll('.ds-station-item');
+      items.forEach(function(item) {
+        var text = item.textContent.toLowerCase();
+        item.style.display = text.indexOf(q) !== -1 ? '' : 'none';
+      });
     });
-  });
+  }
+
+  // ── Show/hide the timestamp-property input based on mode ─
+  var modeSel = document.getElementById('geojson_mode');
+  var tpGroup = document.getElementById('time-property-group');
+  if (modeSel && tpGroup) {
+    modeSel.addEventListener('change', function() {
+      tpGroup.style.display = this.value === 'expanded' ? '' : 'none';
+    });
+  }
+
+  // ── Serialize the display-keys checkboxes into a hidden CSV ─
+  // Backend stores a comma-separated string; the form sees discrete checkboxes
+  // for usability but submits the join, so the hidden field is the source of
+  // truth on submit.
+  var keyBox = document.getElementById('ds-display-keys');
+  var keyHidden = document.getElementById('display_keys');
+  var form = document.querySelector('form.station-form');
+  if (keyBox && keyHidden && form) {
+    function syncKeys() {
+      var checked = keyBox.querySelectorAll(
+        'input[name="display_keys_chk"]:checked'
+      );
+      var values = Array.prototype.map.call(checked, function(el) {
+        return el.value;
+      });
+      keyHidden.value = values.join(',');
+    }
+    keyBox.addEventListener('change', syncKeys);
+    form.addEventListener('submit', syncKeys);
+    syncKeys();
+  }
 })();
 </script>

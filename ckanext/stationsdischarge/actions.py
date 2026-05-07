@@ -875,6 +875,9 @@ def dataset_create(context, data_dict):
         agg=data.get("agg", ""),
         interval_ms=data.get("interval_ms"),
         export_format=data.get("export_format", "geojson"),
+        geojson_mode=data.get("geojson_mode") or "compact",
+        time_property=data.get("time_property") or "date",
+        display_keys=data.get("display_keys") or "",
         user_id=user_obj.id if user_obj else None,
     )
     model.Session.add(ds)
@@ -945,10 +948,15 @@ def dataset_update(context, data_dict):
         raise toolkit.ValidationError(errors)
 
     updatable = ("title", "name", "description", "owner_org",
-                 "time_range", "agg", "interval_ms", "export_format")
+                 "time_range", "agg", "interval_ms", "export_format",
+                 "geojson_mode", "time_property", "display_keys")
     for field in updatable:
         if field == "interval_ms" and "interval_ms" in data_dict:
             ds.interval_ms = data.get("interval_ms")
+            continue
+        if field == "display_keys" and "display_keys" in data_dict:
+            # Allow clearing the whitelist by submitting empty value.
+            ds.display_keys = data.get("display_keys") or ""
             continue
         if field in data and data[field] is not None:
             setattr(ds, field, data[field])
@@ -1021,24 +1029,180 @@ def dataset_list(context, data_dict):
     }
 
 
+def _filter_keys(all_keys_list, whitelist_csv, request_keys_csv):
+    """Resolve which telemetry keys to include for a station.
+
+    Precedence: per-request ``keys`` (if provided) overrides the dataset's
+    stored ``display_keys`` whitelist. Both are filtered against the keys
+    actually configured on the station, so callers can't request keys the
+    station does not own.
+    """
+    station_keys = [k["telemetry_key"] for k in all_keys_list]
+    raw = request_keys_csv if request_keys_csv else whitelist_csv
+    if not raw:
+        return station_keys
+    wanted = {s.strip() for s in str(raw).split(",") if s.strip()}
+    if not wanted:
+        return station_keys
+    return [k for k in station_keys if k in wanted]
+
+
+def _station_base_props(station_dict):
+    """Return the static properties shared by every Feature for a station."""
+    return {
+        "id": station_dict["id"],
+        "title": station_dict["title"],
+        "name": station_dict["name"],
+        "station_id": station_dict["station_id"],
+        "station_status": station_dict.get("station_status"),
+        "river_name": station_dict.get("river_name"),
+        "basin_name": station_dict.get("basin_name"),
+        "country": station_dict.get("country"),
+        "elevation_masl": station_dict.get("elevation_masl"),
+    }
+
+
+def _fetch_station_telemetry(tb_url, tb_api_key, station_dict, tel_keys, tr):
+    """Fetch telemetry from ThingsBoard for a single station, swallowing errors."""
+    entity_id = station_dict.get("thingsboard_entity_id")
+    if not entity_id or not tel_keys:
+        return {}
+    try:
+        return _fetch_telemetry(
+            tb_url, tb_api_key, entity_id, ",".join(tel_keys),
+            start_ts=tr["start_ts"], end_ts=tr["end_ts"], limit=tr["limit"],
+            agg=tr["agg"], interval=tr["interval"],
+        )
+    except Exception as e:
+        log.debug("Dataset GeoJSON: skipping telemetry for %s: %s",
+                  station_dict.get("name"), e)
+        return {}
+
+
+def _ts_to_iso(ts_ms):
+    """Convert a ThingsBoard millisecond timestamp to ISO 8601 (UTC, with Z)."""
+    try:
+        ts_int = int(ts_ms)
+    except (ValueError, TypeError):
+        return None
+    return datetime.datetime.utcfromtimestamp(ts_int / 1000.0).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+
+
+def _coerce_number(value):
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return value
+
+
+def _build_compact_feature(station_dict, lat, lon, tel, key_meta, allowed_keys):
+    """Original 'compact' Feature: one per station with full series + latest."""
+    props = _station_base_props(station_dict)
+    latest = {}
+    series = {}
+    for k, points in tel.items():
+        if not points or k not in allowed_keys:
+            continue
+        ordered = sorted(points, key=lambda p: int(p.get("ts", 0)))
+        last_val = _coerce_number(ordered[-1].get("value", 0))
+        latest[k] = {"value": last_val, "ts": ordered[-1].get("ts")}
+        meta = key_meta.get(k, {})
+        flat_name = meta.get("label") or k
+        if meta.get("unit"):
+            flat_name = "%s (%s)" % (flat_name, meta["unit"])
+        props[flat_name] = last_val
+        compact = []
+        for pt in ordered:
+            try:
+                compact.append([int(pt.get("ts")), float(pt.get("value", 0))])
+            except (ValueError, TypeError):
+                pass
+        if compact:
+            series[k] = compact
+    if latest:
+        props["telemetry"] = latest
+    if series:
+        props["series"] = series
+    return [{
+        "type": "Feature",
+        "geometry": {"type": "Point", "coordinates": [float(lon), float(lat)]},
+        "properties": props,
+    }]
+
+
+def _build_expanded_features(station_dict, lat, lon, tel, key_meta,
+                             allowed_keys, time_property):
+    """One Feature per (station, timestamp). Powers the Terria time slider.
+
+    Timestamps are unioned across all included keys so missing values at a
+    sample don't drop the feature. Each feature carries every key for which a
+    value exists at that timestamp under its raw key name (e.g. ``waterLevel``).
+    """
+    base = _station_base_props(station_dict)
+    by_ts = {}
+    for k, points in tel.items():
+        if not points or k not in allowed_keys:
+            continue
+        for pt in points:
+            ts = pt.get("ts")
+            try:
+                ts_int = int(ts)
+            except (ValueError, TypeError):
+                continue
+            slot = by_ts.setdefault(ts_int, {})
+            slot[k] = _coerce_number(pt.get("value"))
+
+    features = []
+    geometry = {"type": "Point", "coordinates": [float(lon), float(lat)]}
+    for ts_int in sorted(by_ts.keys()):
+        props = dict(base)
+        iso = _ts_to_iso(ts_int)
+        if not iso:
+            continue
+        props[time_property] = iso
+        props["ts_ms"] = ts_int
+        for k, val in by_ts[ts_int].items():
+            props[k] = val
+            meta = key_meta.get(k, {})
+            label = meta.get("label")
+            unit = meta.get("unit")
+            if label and label != k:
+                flat_name = "%s (%s)" % (label, unit) if unit else label
+                props[flat_name] = val
+        features.append({
+            "type": "Feature",
+            "geometry": geometry,
+            "properties": props,
+        })
+    return features
+
+
 def dataset_geojson(context, data_dict):
     """Return a dataset's stations as a GeoJSON FeatureCollection.
 
-    By default returns only station metadata (lightweight, ThingsBoard not
-    queried). Pass ``include_telemetry=true`` to fetch telemetry from
-    ThingsBoard for each station.
+    Two output shapes are supported via ``mode`` (or the dataset's stored
+    ``geojson_mode``):
 
-    The time window applied to telemetry is taken from the dataset's stored
-    ``time_range`` / ``agg`` / ``interval_ms`` settings, but each request can
-    override them via query parameters (``time_range``, ``start_ts``,
-    ``end_ts``, ``agg``, ``interval``, ``limit``).
+    - ``compact`` (default): one Feature per station. Latest values are flat
+      properties for pop-ups; the full series is under ``properties.series``.
+      This is what the built-in dashboard consumes.
+    - ``expanded``: one Feature per (station, timestamp). Drop the URL into
+      TerriaJS as a GeoJSON catalog item with ``"timeProperty": "date"`` and
+      the time slider scrubs through the values.
 
-    Each station feature exposes the latest value of every key as a flat
-    property (so Terria pop-ups render cleanly) plus the full series in
-    ``properties.series[<key>]`` as ``[[ts_ms, value], ...]`` pairs.
+    The time window comes from the dataset's stored ``time_range`` /
+    ``agg`` / ``interval_ms``, with per-request overrides
+    (``time_range``, ``start_ts``, ``end_ts``, ``agg``, ``interval``,
+    ``limit``).
 
     :param id: Dataset UUID or name (required)
-    :param include_telemetry: Include telemetry from ThingsBoard ("true"/"false")
+    :param include_telemetry: Include telemetry from ThingsBoard ("true"/"false").
+        Forced on for ``mode=expanded``.
+    :param mode: ``compact`` or ``expanded``
+    :param keys: Comma-separated whitelist of telemetry keys (overrides the
+        dataset's stored ``display_keys``)
     :param time_range: Override dataset's stored preset (1h/24h/7d/30d/...)
     :param start_ts: Override start timestamp (ms)
     :param end_ts: Override end timestamp (ms)
@@ -1050,11 +1214,23 @@ def dataset_geojson(context, data_dict):
     ds_data = dataset_show(context, data_dict)
     toolkit.check_access("dataset_geojson", context, data_dict)
 
-    include_telemetry = str(data_dict.get("include_telemetry", "")).lower() == "true"
+    mode = (data_dict.get("mode") or ds_data.get("geojson_mode") or "compact").lower()
+    if mode not in ("compact", "expanded"):
+        mode = "compact"
+
+    time_property = (data_dict.get("time_property") or
+                     ds_data.get("time_property") or "date")
+    keys_override = data_dict.get("keys") or ""
+    stored_keys = ds_data.get("display_keys") or ""
+
+    # Expanded mode is meaningless without telemetry — force it on.
+    include_telemetry = (
+        mode == "expanded"
+        or str(data_dict.get("include_telemetry", "")).lower() == "true"
+    )
 
     tr_params = {}
     if include_telemetry:
-        # Layer query overrides on top of the dataset's stored config.
         tr_params = {
             "time_range": data_dict.get("time_range") or ds_data.get("time_range"),
             "agg": data_dict.get("agg") or ds_data.get("agg"),
@@ -1076,82 +1252,34 @@ def dataset_geojson(context, data_dict):
         if lat is None or lon is None:
             continue
 
-        props = {
-            "id": station_dict["id"],
-            "title": station_dict["title"],
-            "name": station_dict["name"],
-            "station_id": station_dict["station_id"],
-            "station_status": station_dict.get("station_status"),
-            "river_name": station_dict.get("river_name"),
-            "basin_name": station_dict.get("basin_name"),
-            "country": station_dict.get("country"),
-            "elevation_masl": station_dict.get("elevation_masl"),
-        }
+        keys_list = station_dict.get("telemetry_keys", [])
+        key_meta = {k["telemetry_key"]: k for k in keys_list}
+        allowed_keys = _filter_keys(keys_list, stored_keys, keys_override)
 
-        if include_telemetry and tb_api_key:
-            entity_id = station_dict.get("thingsboard_entity_id")
-            keys_list = station_dict.get("telemetry_keys", [])
-            tel_keys = ",".join(k["telemetry_key"] for k in keys_list)
-            key_meta = {k["telemetry_key"]: k for k in keys_list}
-            if entity_id and tel_keys:
-                try:
-                    tel = _fetch_telemetry(
-                        tb_url, tb_api_key, entity_id, tel_keys,
-                        start_ts=tr["start_ts"],
-                        end_ts=tr["end_ts"],
-                        limit=tr["limit"],
-                        agg=tr["agg"],
-                        interval=tr["interval"],
-                    )
-                    latest = {}
-                    series = {}
-                    for k, points in tel.items():
-                        if not points:
-                            continue
-                        # ThingsBoard returns newest-first; sort ascending by ts
-                        ordered = sorted(
-                            points,
-                            key=lambda p: int(p.get("ts", 0)),
-                        )
-                        try:
-                            last_val = float(ordered[-1].get("value", 0))
-                        except (ValueError, TypeError):
-                            last_val = ordered[-1].get("value")
-                        latest[k] = {
-                            "value": last_val,
-                            "ts": ordered[-1].get("ts"),
-                        }
-                        # Flat property for Terria pop-ups (uses label + unit)
-                        meta = key_meta.get(k, {})
-                        flat_name = meta.get("label") or k
-                        if meta.get("unit"):
-                            flat_name = "%s (%s)" % (flat_name, meta["unit"])
-                        props[flat_name] = last_val
-                        # Compact series array for Terria charts
-                        compact = []
-                        for pt in ordered:
-                            try:
-                                compact.append([
-                                    int(pt.get("ts")),
-                                    float(pt.get("value", 0)),
-                                ])
-                            except (ValueError, TypeError):
-                                pass
-                        if compact:
-                            series[k] = compact
-                    if latest:
-                        props["telemetry"] = latest
-                    if series:
-                        props["series"] = series
-                except Exception as e:
-                    log.debug("Dataset GeoJSON: skipping telemetry for %s: %s",
-                              station_dict.get("name"), e)
+        if not include_telemetry or not tb_api_key:
+            features.append({
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [float(lon), float(lat)],
+                },
+                "properties": _station_base_props(station_dict),
+            })
+            continue
 
-        features.append({
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [float(lon), float(lat)]},
-            "properties": props,
-        })
+        tel = _fetch_station_telemetry(
+            tb_url, tb_api_key, station_dict, allowed_keys, tr,
+        )
+
+        if mode == "expanded":
+            features.extend(_build_expanded_features(
+                station_dict, lat, lon, tel, key_meta,
+                allowed_keys, time_property,
+            ))
+        else:
+            features.extend(_build_compact_feature(
+                station_dict, lat, lon, tel, key_meta, allowed_keys,
+            ))
 
     result = {
         "type": "FeatureCollection",
@@ -1160,8 +1288,16 @@ def dataset_geojson(context, data_dict):
             "id": ds_data["id"],
             "title": ds_data["title"],
             "name": ds_data["name"],
+            "mode": mode,
         },
     }
+    if mode == "expanded":
+        # Hint for TerriaJS catalog config — Terria itself ignores extra
+        # top-level keys, so this is purely informational for callers/UI.
+        result["terria"] = {
+            "type": "geojson",
+            "timeProperty": time_property,
+        }
     if include_telemetry and tr:
         result["telemetry_window"] = {
             "time_range": tr["time_range"],

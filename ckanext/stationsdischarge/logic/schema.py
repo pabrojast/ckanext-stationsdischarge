@@ -178,6 +178,61 @@ def _navl_dataset_name_validator(key, data, errors, context):
             raise StopOnError
 
 
+_VALID_GEOJSON_MODES = ("compact", "expanded")
+
+
+def _navl_geojson_mode(key, data, errors, context):
+    """Coerce empty string to default and reject unknown modes."""
+    value = data.get(key, missing)
+    if value is missing or value is None or value == "":
+        data[key] = "compact"
+        return
+    value = str(value).strip().lower()
+    if value not in _VALID_GEOJSON_MODES:
+        errors[key].append(
+            "Must be one of: %s" % ", ".join(_VALID_GEOJSON_MODES)
+        )
+        raise StopOnError
+    data[key] = value
+
+
+def _navl_time_property(key, data, errors, context):
+    """Time property name must be a safe identifier (default: 'date')."""
+    value = data.get(key, missing)
+    if value is missing or value is None:
+        return
+    if isinstance(value, str):
+        value = value.strip()
+    if value == "":
+        data[key] = "date"
+        return
+    if not re.match(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$", value):
+        errors[key].append(
+            "Must start with a letter/underscore and contain only "
+            "letters, digits or underscores (max 64 chars)."
+        )
+        raise StopOnError
+    data[key] = value
+
+
+def _navl_csv_keys(key, data, errors, context):
+    """Normalise a comma-separated list of telemetry keys; trim and dedupe."""
+    value = data.get(key, missing)
+    if value is missing or value is None:
+        return
+    if isinstance(value, list):
+        items = [str(x).strip() for x in value if str(x).strip()]
+    else:
+        items = [s.strip() for s in str(value).split(",") if s.strip()]
+    seen = set()
+    normalised = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            normalised.append(item)
+    data[key] = ",".join(normalised)
+
+
 def dataset_create_schema():
     return {
         "title": [not_empty, unicode_safe],
@@ -188,6 +243,9 @@ def dataset_create_schema():
         "agg": [ignore_missing, unicode_safe],
         "interval_ms": [ignore_missing, _navl_optional_int],
         "export_format": [ignore_missing, unicode_safe],
+        "geojson_mode": [ignore_missing, _navl_geojson_mode],
+        "time_property": [ignore_missing, _navl_time_property],
+        "display_keys": [ignore_missing, _navl_csv_keys],
     }
 
 

@@ -46,63 +46,199 @@
   </div>
 
   {# ── GeoJSON URL builder for Terria ── #}
+  {# Aggregate every telemetry key across this dataset's stations so the user
+     can quickly filter what the GeoJSON exposes. Mirrors the dataset form. #}
+  {% set ds_keys = {} %}
+  {% for st in dataset.stations_detail %}
+    {% for tk in (st.telemetry_keys or []) %}
+      {% if tk.telemetry_key and tk.telemetry_key not in ds_keys %}
+        {% set _ = ds_keys.update({tk.telemetry_key: tk}) %}
+      {% endif %}
+    {% endfor %}
+  {% endfor %}
+  {% set stored_display = (dataset.display_keys or '').split(',') | map('trim') | list %}
+
   <div class="station-detail-section" id="ds-geojson-builder">
-    <h2><i class="fa fa-link"></i> {{ _('GeoJSON URL for Terria') }}</h2>
+    <h2><i class="fa fa-link"></i> {{ _('GeoJSON URL for TerriaJS') }}</h2>
     <p class="text-muted" style="margin-bottom:10px;">
-      {{ _('Pick a time window, copy the URL, and paste it as a GeoJSON catalog item in Terria. Telemetry is fetched from ThingsBoard on each request, so prefer aggregated/long windows for many stations.') }}
+      {{ _('Pick the export shape, time window and which keys to include, then copy the URL into TerriaJS as a GeoJSON catalog item. The "Time-series (animated)" mode pairs with the time slider; the "Compact" mode is what the built-in dashboard reads.') }}
     </p>
-    <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
-      <label style="margin:0; font-weight:600;">{{ _('Time Range') }}:</label>
-      <select id="ds-tr" class="form-control" style="width:auto; display:inline-block;">
-        {% set tr = dataset.time_range or '30d' %}
-        <option value="">{{ _('— No time window (latest only) —') }}</option>
-        <option value="24h" {% if tr == '24h' %}selected{% endif %}>24 {{ _('hours') }}</option>
-        <option value="7d"  {% if tr == '7d'  %}selected{% endif %}>7 {{ _('days') }}</option>
-        <option value="30d" {% if tr == '30d' %}selected{% endif %}>30 {{ _('days') }}</option>
-        <option value="90d" {% if tr == '90d' %}selected{% endif %}>90 {{ _('days') }}</option>
-        <option value="6m"  {% if tr == '6m'  %}selected{% endif %}>6 {{ _('months') }}</option>
-        <option value="1y"  {% if tr == '1y'  %}selected{% endif %}>1 {{ _('year') }}</option>
-      </select>
-      <label style="margin:0;">
+
+    <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; margin-bottom:8px;">
+      <div>
+        <label style="display:block; margin:0 0 4px 0; font-weight:600;">{{ _('Mode') }}</label>
+        <select id="ds-mode" class="form-control" style="width:auto;">
+          {% set gm = dataset.geojson_mode or 'compact' %}
+          <option value="compact"  {% if gm == 'compact'  %}selected{% endif %}>{{ _('Compact') }}</option>
+          <option value="expanded" {% if gm == 'expanded' %}selected{% endif %}>{{ _('Time-series (animated)') }}</option>
+        </select>
+      </div>
+
+      <div>
+        <label style="display:block; margin:0 0 4px 0; font-weight:600;">{{ _('Time Range') }}</label>
+        <select id="ds-tr" class="form-control" style="width:auto;">
+          {% set tr = dataset.time_range or '30d' %}
+          <option value="">{{ _('— Latest only —') }}</option>
+          <option value="1h"  {% if tr == '1h'  %}selected{% endif %}>1 {{ _('hour') }}</option>
+          <option value="24h" {% if tr == '24h' %}selected{% endif %}>24 {{ _('hours') }}</option>
+          <option value="7d"  {% if tr == '7d'  %}selected{% endif %}>7 {{ _('days') }}</option>
+          <option value="30d" {% if tr == '30d' %}selected{% endif %}>30 {{ _('days') }}</option>
+          <option value="90d" {% if tr == '90d' %}selected{% endif %}>90 {{ _('days') }}</option>
+          <option value="6m"  {% if tr == '6m'  %}selected{% endif %}>6 {{ _('months') }}</option>
+          <option value="1y"  {% if tr == '1y'  %}selected{% endif %}>1 {{ _('year') }}</option>
+        </select>
+      </div>
+
+      <label style="margin:0 0 8px 0;">
         <input type="checkbox" id="ds-tel" checked />
         {{ _('Include telemetry') }}
       </label>
     </div>
+
+    {% if ds_keys %}
+      <details style="margin: 8px 0 12px 0;">
+        <summary style="cursor:pointer; font-weight:600;">
+          {{ _('Filter keys') }}
+          <small class="text-muted">
+            ({{ _('leave all unchecked to use the dataset default') }})
+          </small>
+        </summary>
+        <div id="ds-keys-box" style="margin-top:8px; padding:8px;
+             border:1px solid #eee; border-radius:4px; max-height:180px;
+             overflow-y:auto; background:#fafafa;">
+          {% for key, meta in ds_keys.items() %}
+            <label style="display:inline-block; margin:0 12px 4px 0;">
+              <input type="checkbox" class="ds-key-chk" value="{{ key }}"
+                     {% if key in stored_display %}checked{% endif %} />
+              <code>{{ key }}</code>{% if meta.label %} <small class="text-muted">— {{ meta.label }}</small>{% endif %}
+            </label>
+          {% endfor %}
+        </div>
+      </details>
+    {% endif %}
+
     <div style="display:flex; gap:8px; margin-top:10px;">
-      <input type="text" id="ds-url" class="form-control" readonly style="flex:1; font-family:monospace; font-size:12px;" />
-      <button class="btn btn-default" id="ds-copy"><i class="fa fa-copy"></i> {{ _('Copy') }}</button>
-      <a class="btn btn-default" id="ds-open" target="_blank"><i class="fa fa-external-link"></i> {{ _('Open') }}</a>
+      <input type="text" id="ds-url" class="form-control" readonly
+             style="flex:1; font-family:monospace; font-size:12px;" />
+      <button class="btn btn-default" id="ds-copy" type="button">
+        <i class="fa fa-copy"></i> {{ _('Copy') }}
+      </button>
+      <a class="btn btn-default" id="ds-open" target="_blank">
+        <i class="fa fa-external-link"></i> {{ _('Open') }}
+      </a>
+    </div>
+
+    {# Terria catalog JSON snippet — only meaningful in expanded mode #}
+    <div id="ds-terria-block" style="margin-top:14px; display:none;">
+      <label style="font-weight:600;">{{ _('TerriaJS catalog item (JSON)') }}</label>
+      <p class="text-muted" style="margin:0 0 6px 0; font-size:12px;">
+        {{ _('Paste this into your Terria catalog group, or use it with the “Add data → from URL” dialog after selecting GeoJSON. The') }}
+        <code>timeProperty</code>
+        {{ _('field is what binds the time slider to the data.') }}
+      </p>
+      <textarea id="ds-terria-json" class="form-control" rows="10" readonly
+                style="font-family:monospace; font-size:12px;"></textarea>
+      <button class="btn btn-default btn-sm" id="ds-terria-copy"
+              type="button" style="margin-top:6px;">
+        <i class="fa fa-copy"></i> {{ _('Copy JSON') }}
+      </button>
     </div>
   </div>
 
   <script>
   (function () {
     var base = {{ geojson_url | tojson }};
+    var modeSel = document.getElementById('ds-mode');
     var trSel = document.getElementById('ds-tr');
     var telCb = document.getElementById('ds-tel');
+    var keyBox = document.getElementById('ds-keys-box');
     var urlInput = document.getElementById('ds-url');
     var openLink = document.getElementById('ds-open');
     var copyBtn = document.getElementById('ds-copy');
+    var terriaBlock = document.getElementById('ds-terria-block');
+    var terriaJson = document.getElementById('ds-terria-json');
+    var terriaCopy = document.getElementById('ds-terria-copy');
+
+    var DATASET_TITLE = {{ dataset.title | tojson }};
+    var DATASET_NAME = {{ dataset.name | tojson }};
+    var TIME_PROP = {{ (dataset.time_property or 'date') | tojson }};
+
+    function selectedKeys() {
+      if (!keyBox) return [];
+      return Array.prototype.map.call(
+        keyBox.querySelectorAll('.ds-key-chk:checked'),
+        function (el) { return el.value; }
+      );
+    }
 
     function rebuild() {
+      var mode = modeSel.value;
       var params = [];
-      if (telCb.checked) params.push('include_telemetry=true');
+      // Expanded mode is meaningless without telemetry — force it on.
+      if (mode === 'expanded') {
+        params.push('mode=expanded');
+        params.push('include_telemetry=true');
+      } else if (telCb.checked) {
+        params.push('include_telemetry=true');
+      }
       if (trSel.value) params.push('time_range=' + encodeURIComponent(trSel.value));
+      var keys = selectedKeys();
+      if (keys.length) params.push('keys=' + encodeURIComponent(keys.join(',')));
       var rel = base + (params.length ? '?' + params.join('&') : '');
       var abs = new URL(rel, window.location.origin).toString();
       urlInput.value = abs;
       openLink.href = abs;
+
+      if (mode === 'expanded') {
+        terriaBlock.style.display = '';
+        terriaJson.value = JSON.stringify({
+          type: 'geojson',
+          name: DATASET_TITLE,
+          id: 'hydro-dataset-' + DATASET_NAME,
+          url: abs,
+          timeProperty: TIME_PROP,
+          forceCesiumPrimitives: true,
+          featureInfoTemplate: {
+            template:
+              '<h4>{{title}}</h4>' +
+              '<p><strong>Station:</strong> <code>{{station_id}}</code></p>' +
+              '<p><strong>' + TIME_PROP + ':</strong> {{' + TIME_PROP + '}}</p>'
+          }
+        }, null, 2);
+        // Disable the "include telemetry" checkbox; it's implied.
+        telCb.checked = true;
+        telCb.disabled = true;
+      } else {
+        terriaBlock.style.display = 'none';
+        telCb.disabled = false;
+      }
     }
-    trSel.addEventListener('change', rebuild);
-    telCb.addEventListener('change', rebuild);
+
+    [modeSel, trSel, telCb].forEach(function (el) {
+      if (el) el.addEventListener('change', rebuild);
+    });
+    if (keyBox) keyBox.addEventListener('change', rebuild);
+
+    function flashCopied(btn) {
+      var orig = btn.innerHTML;
+      btn.innerHTML = '<i class="fa fa-check"></i> {{ _("Copied") }}';
+      setTimeout(function () { btn.innerHTML = orig; }, 1500);
+    }
+
     copyBtn.addEventListener('click', function () {
       urlInput.select();
       if (navigator.clipboard) navigator.clipboard.writeText(urlInput.value);
       else document.execCommand('copy');
-      var orig = copyBtn.innerHTML;
-      copyBtn.innerHTML = '<i class="fa fa-check"></i> {{ _("Copied") }}';
-      setTimeout(function () { copyBtn.innerHTML = orig; }, 1500);
+      flashCopied(copyBtn);
     });
+    if (terriaCopy) {
+      terriaCopy.addEventListener('click', function () {
+        terriaJson.select();
+        if (navigator.clipboard) navigator.clipboard.writeText(terriaJson.value);
+        else document.execCommand('copy');
+        flashCopied(terriaCopy);
+      });
+    }
     rebuild();
   })();
   </script>
@@ -119,6 +255,32 @@
         <tr><th>{{ _('Interval') }}</th><td>{{ dataset.interval_ms }} ms</td></tr>
       {% endif %}
       <tr><th>{{ _('Export Format') }}</th><td>{{ dataset.export_format or 'geojson' }}</td></tr>
+      <tr>
+        <th>{{ _('GeoJSON Mode') }}</th>
+        <td>
+          <code>{{ dataset.geojson_mode or 'compact' }}</code>
+          {% if (dataset.geojson_mode or 'compact') == 'expanded' %}
+            — {{ _('one Feature per timestamp (TerriaJS time slider)') }}
+          {% else %}
+            — {{ _('one Feature per station with full series in properties') }}
+          {% endif %}
+        </td>
+      </tr>
+      {% if (dataset.geojson_mode or 'compact') == 'expanded' %}
+        <tr><th>{{ _('Timestamp Property') }}</th><td><code>{{ dataset.time_property or 'date' }}</code></td></tr>
+      {% endif %}
+      <tr>
+        <th>{{ _('Display Keys') }}</th>
+        <td>
+          {% if dataset.display_keys %}
+            {% for k in dataset.display_keys.split(',') %}
+              <code>{{ k.strip() }}</code>{% if not loop.last %}, {% endif %}
+            {% endfor %}
+          {% else %}
+            <span class="text-muted">{{ _('All telemetry keys configured on each station') }}</span>
+          {% endif %}
+        </td>
+      </tr>
     </table>
   </div>
 

@@ -674,6 +674,9 @@ def ds_geojson(name):
     data_dict = {
         "id": name,
         "include_telemetry": toolkit.request.args.get("include_telemetry", ""),
+        "mode": toolkit.request.args.get("mode", ""),
+        "keys": toolkit.request.args.get("keys", ""),
+        "time_property": toolkit.request.args.get("time_property", ""),
         "time_range": toolkit.request.args.get("time_range", ""),
         "start_ts": toolkit.request.args.get("start_ts", ""),
         "end_ts": toolkit.request.args.get("end_ts", ""),
