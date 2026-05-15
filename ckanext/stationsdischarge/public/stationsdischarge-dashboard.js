@@ -26,6 +26,10 @@
   var chartType = 'line';
   var autoRefreshCountdown = null;
   var autoRefreshSeconds = 0;
+  // Robust y-axis on by default: outlier spikes get clipped above/below the
+  // visible range so the bulk of the signal stays readable, matching how
+  // ThingsBoard renders its water-level widgets. User can toggle off.
+  var robustYScale = true;
 
   var PRESETS = {
     1:    { limit: 500,  agg: null,  interval: null },
@@ -46,6 +50,48 @@
       if (hoursSpan <= PRESET_HOURS[i]) return PRESET_HOURS[i];
     }
     return PRESET_HOURS[PRESET_HOURS.length - 1];
+  }
+
+  // Pick Chart.js time-axis settings so multi-day spans tick by day instead
+  // of every 3 hours. Chart.js' auto-skip handles density from there.
+  function pickTimeAxis(hoursSpan) {
+    if (!hoursSpan || hoursSpan <= 0) hoursSpan = 24;
+    if (hoursSpan <= 6) {
+      return { minUnit: 'minute',
+               displayFormats: { minute: 'HH:mm', hour: 'HH:mm' } };
+    }
+    if (hoursSpan <= 48) {
+      return { minUnit: 'hour',
+               displayFormats: { hour: 'HH:mm', day: 'MMM d' } };
+    }
+    if (hoursSpan <= 24 * 180) {  // up to ~6 months → daily ticks
+      return { minUnit: 'day',
+               displayFormats: { day: 'MMM d', week: 'MMM d', month: 'MMM yyyy' } };
+    }
+    return { minUnit: 'month',
+             displayFormats: { month: 'MMM yyyy', year: 'yyyy' } };
+  }
+
+  // Tukey-fence-based robust bounds. Returns null when data is too sparse,
+  // constant, or has no outliers (caller uses Chart.js auto-scale instead).
+  function robustBounds(values) {
+    if (!values || values.length < 10) return null;
+    var sorted = values.slice().sort(function (a, b) { return a - b; });
+    var min = sorted[0];
+    var max = sorted[sorted.length - 1];
+    function pct(p) { return sorted[Math.floor(p * (sorted.length - 1))]; }
+    var q1 = pct(0.25), q3 = pct(0.75);
+    var iqr = q3 - q1;
+    if (iqr === 0) return null;
+    // k=3 (vs Tukey's 1.5) tolerates real peaks while still clipping
+    // pathological spikes 10×+ larger than the typical signal.
+    var lo = q1 - 3 * iqr;
+    var hi = q3 + 3 * iqr;
+    var clippedLo = (lo > min) ? lo : min;
+    var clippedHi = (hi < max) ? hi : max;
+    if (clippedLo === min && clippedHi === max) return null;  // no outliers
+    var span = clippedHi - clippedLo || Math.abs(clippedHi) || 1;
+    return { min: clippedLo - span * 0.05, max: clippedHi + span * 0.05 };
   }
 
   var AGG_LABELS = {
@@ -314,11 +360,13 @@
     var isArea = (chartType === 'area');
 
     var datasets = [];
+    var timeAxis = pickTimeAxis(activeHours);
     var scales = {
       x: {
         type: 'time',
-        time: { tooltipFormat: 'yyyy-MM-dd HH:mm' },
+        time: Object.assign({ tooltipFormat: 'yyyy-MM-dd HH:mm' }, timeAxis),
         title: { display: true, text: t('time_utc', 'Time (UTC)'), font: { size: 12 } },
+        ticks: { autoSkip: true, autoSkipPadding: 16, maxRotation: 0 },
       }
     };
 
@@ -349,6 +397,16 @@
         grid: { drawOnChartArea: idx === 0 },
         ticks: { color: color },
       };
+
+      if (robustYScale) {
+        var values = points.map(function (p) { return p.value; })
+                           .filter(function (v) { return !isNaN(v); });
+        var b = robustBounds(values);
+        if (b) {
+          scales[axisId].min = b.min;
+          scales[axisId].max = b.max;
+        }
+      }
     });
 
     var resetBtn = $('dashResetZoom');
@@ -493,6 +551,20 @@
     });
   }
 
+  /* ── Robust y-axis toggle ────────────────────────── */
+  function initRobustY() {
+    var btn = $('dashRobustY');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      robustYScale = !robustYScale;
+      this.classList.toggle('active', robustYScale);
+      this.innerHTML = robustYScale
+        ? '<i class="fa fa-compress"></i> ' + t('trim_outliers', 'Trim outliers')
+        : '<i class="fa fa-expand"></i> ' + t('full_range', 'Full range');
+      if (Object.keys(currentData).length) renderMainChart();
+    });
+  }
+
   /* ── Fullscreen ──────────────────────────────────── */
   function initFullscreen() {
     var btn = $('dashFullscreen');
@@ -563,6 +635,7 @@
     initTimeControls();
     initKeySelector();
     initChartTypes();
+    initRobustY();
     initFullscreen();
     initAutoRefresh();
     initTableSearch();
