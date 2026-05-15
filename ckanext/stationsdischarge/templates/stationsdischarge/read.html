@@ -17,8 +17,11 @@
       <p class="text-muted">{{ station.notes }}</p>
     {% endif %}
 
-    {# Action buttons #}
-    <div class="btn-group">
+    {# Action buttons — flex with gap so they don't visually merge like btn-group #}
+    <div class="station-action-buttons" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+      <a href="{{ h.url_for('hydro_stations.index') }}" class="btn btn-default">
+        <i class="fa fa-arrow-left"></i> {{ _('Back to stations') }}
+      </a>
       {% if station.thingsboard_entity_id %}
         <a href="{{ h.url_for('hydro_stations.dashboard', name=station.name) }}" class="btn btn-info">
           <i class="fa fa-tachometer"></i> {{ _('Dashboard') }}

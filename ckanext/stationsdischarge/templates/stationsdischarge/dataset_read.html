@@ -9,8 +9,11 @@
       <p class="text-muted">{{ dataset.description }}</p>
     {% endif %}
 
-    {# Action buttons #}
-    <div class="btn-group">
+    {# Action buttons — flex with gap so they don't visually merge like btn-group #}
+    <div class="dataset-action-buttons" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+      <a href="{{ h.url_for('hydro_datasets.ds_index') }}" class="btn btn-default">
+        <i class="fa fa-arrow-left"></i> {{ _('Back to datasets') }}
+      </a>
       <a href="{{ h.url_for('hydro_datasets.ds_dashboard', name=dataset.name) }}" class="btn btn-primary">
         <i class="fa fa-tachometer"></i> {{ _('Open Dashboard') }}
       </a>
