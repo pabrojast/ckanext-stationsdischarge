@@ -406,6 +406,9 @@ def _parse_telemetry_keys_from_form(form):
                 "label": form.get(f"tk_label_{i}", "").strip(),
                 "unit": form.get(f"tk_unit_{i}", "").strip(),
                 "variable_type": form.get(f"tk_variable_type_{i}", "").strip(),
+                "calibration_slope": form.get(
+                    f"tk_calibration_slope_{i}", ""
+                ).strip(),
                 "calibration_offset": form.get(
                     f"tk_calibration_offset_{i}", ""
                 ).strip(),

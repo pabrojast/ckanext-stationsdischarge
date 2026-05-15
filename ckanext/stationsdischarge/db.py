@@ -141,10 +141,13 @@ class StationTelemetryKey(DomainObject, BaseModel):
     unit = Column(types.UnicodeText)
     variable_type = Column(types.UnicodeText)
     sort_order = Column(types.Integer, default=0)
-    # Constant subtracted from raw values before they reach the dashboard /
-    # GeoJSON output: displayed_value = raw_value - calibration_offset.
-    # Set to e.g. the sensor's mounting height to turn distance-to-surface
-    # readings into water depth without re-flashing the device.
+    # Linear calibration applied before values reach the dashboard / GeoJSON:
+    #   displayed = calibration_slope * raw + calibration_offset
+    # Matches ThingsBoard's convention (slope/intercept as device attrs).
+    # Defaults are pass-through (slope=1, offset=0). For a distance sensor
+    # mounted at height H above the riverbed where rising water reduces the
+    # reading, use slope=-1 and offset=H to get water depth directly.
+    calibration_slope = Column(types.Float, default=1.0)
     calibration_offset = Column(types.Float, default=0.0)
     created = Column(types.DateTime, default=datetime.datetime.utcnow)
 

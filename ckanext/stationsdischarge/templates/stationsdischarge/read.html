@@ -124,17 +124,25 @@
           <th>{{ _('Label') }}</th>
           <th>{{ _('Unit') }}</th>
           <th>{{ _('Variable Type') }}</th>
-          <th title="{{ _('Subtracted from raw values before display') }}">{{ _('Calibration offset') }}</th>
+          <th title="{{ _('Linear calibration: displayed = slope × raw + offset') }}">{{ _('Calibration') }}</th>
         </tr>
       </thead>
       <tbody>
         {% for tk in station.telemetry_keys %}
+        {% set slope = tk.calibration_slope if tk.calibration_slope is not none else 1 %}
+        {% set offset = tk.calibration_offset if tk.calibration_offset is not none else 0 %}
         <tr>
           <td><code>{{ tk.telemetry_key }}</code></td>
           <td>{{ tk.label or '—' }}</td>
           <td>{{ tk.unit or '—' }}</td>
           <td>{{ tk.variable_type or '—' }}</td>
-          <td>{{ tk.calibration_offset if tk.calibration_offset else '—' }}</td>
+          <td>
+            {% if slope == 1 and offset == 0 %}
+              —
+            {% else %}
+              <code>{{ slope }} × raw {{ '+' if offset >= 0 else '' }}{{ offset }}</code>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

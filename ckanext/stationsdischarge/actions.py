@@ -68,10 +68,15 @@ def _save_telemetry_keys(station_id, keys_list):
         tk.variable_type = key_data.get("variable_type", "")
         tk.sort_order = key_data.get("sort_order", i)
         raw_offset = key_data.get("calibration_offset")
+        raw_slope = key_data.get("calibration_slope")
         try:
             tk.calibration_offset = float(raw_offset) if raw_offset not in (None, "") else 0.0
         except (TypeError, ValueError):
             tk.calibration_offset = 0.0
+        try:
+            tk.calibration_slope = float(raw_slope) if raw_slope not in (None, "") else 1.0
+        except (TypeError, ValueError):
+            tk.calibration_slope = 1.0
         tk.save()
     model.Session.commit()
 
@@ -405,27 +410,56 @@ def _tb_request(tb_url, tb_api_key, api_path):
         )
 
 
-def _apply_calibration(telemetry, offsets):
-    """Subtract per-key calibration offsets from a TB telemetry response.
+def _apply_calibration(telemetry, calibrations):
+    """Apply per-key linear calibration to a TB telemetry response in-place.
 
     *telemetry* is the ``{key: [{ts, value}, ...]}`` shape returned by
-    ThingsBoard. *offsets* maps telemetry key → float offset. Non-numeric
-    values are left untouched so booleans/strings still pass through.
-    Keys with offset == 0 (or missing) are skipped to avoid float drift.
+    ThingsBoard. *calibrations* maps telemetry key → ``(slope, offset)``
+    where the displayed value becomes ``slope * raw + offset``. Non-numeric
+    values pass through untouched. Pass-through entries (slope=1, offset=0)
+    are skipped to avoid float drift.
     """
-    if not telemetry or not isinstance(telemetry, dict) or not offsets:
+    if not telemetry or not isinstance(telemetry, dict) or not calibrations:
         return telemetry
     for key, points in telemetry.items():
-        offset = offsets.get(key)
-        if not offset or not points:
+        cal = calibrations.get(key)
+        if not cal or not points:
+            continue
+        slope, offset = cal
+        if slope in (1, 1.0) and not offset:
             continue
         for pt in points:
             raw = pt.get("value")
             try:
-                pt["value"] = float(raw) - float(offset)
+                pt["value"] = float(slope) * float(raw) + float(offset)
             except (TypeError, ValueError):
                 continue
     return telemetry
+
+
+def _telemetry_key_calibrations(keys_iterable, attr_lookup="attribute"):
+    """Build the calibrations map ``_apply_calibration`` expects.
+
+    *keys_iterable* may yield either ``StationTelemetryKey`` ORM rows or the
+    dict form coming out of ``as_dict()``. We accept both because dataset
+    GeoJSON enrichment goes through the dict form while ``station_telemetry``
+    has ORM rows directly available.
+    """
+    cals = {}
+    for tk in keys_iterable or []:
+        if hasattr(tk, "telemetry_key"):
+            k = tk.telemetry_key
+            slope = tk.calibration_slope if tk.calibration_slope is not None else 1.0
+            offset = tk.calibration_offset if tk.calibration_offset is not None else 0.0
+        else:
+            k = tk.get("telemetry_key")
+            slope = tk.get("calibration_slope")
+            offset = tk.get("calibration_offset")
+            slope = 1.0 if slope in (None, "") else slope
+            offset = 0.0 if offset in (None, "") else offset
+        if k and ((slope not in (1, 1.0)) or offset):
+            cals[k] = (slope, offset)
+    return cals
 
 
 def _resolve_station(data_dict):
@@ -666,10 +700,23 @@ def station_fetch_tb_metadata(context, data_dict):
     except Exception as e:
         log.warning("TB: Could not fetch telemetry keys: %s", e)
 
+    # ThingsBoard stores linear calibration as device-level SERVER_SCOPE
+    # attributes (`slope`, `intercept`). Surface them as a dedicated block so
+    # the form can pre-fill the matching telemetry key without the JS having
+    # to know the convention.
+    calibration = {}
+    for src, dst in (("slope", "slope"), ("intercept", "offset")):
+        if src in attributes:
+            try:
+                calibration[dst] = float(attributes[src])
+            except (TypeError, ValueError):
+                pass
+
     return {
         "device": device_info,
         "attributes": attributes,
         "telemetry_keys": telemetry_keys,
+        "calibration": calibration,
     }
 
 def station_telemetry(context, data_dict):
@@ -728,12 +775,10 @@ def station_telemetry(context, data_dict):
         interval=tr["interval"],
     )
 
-    offsets = {
-        tk.telemetry_key: tk.calibration_offset
-        for tk in station_db.StationTelemetryKey.get_by_station(station.id)
-        if tk.calibration_offset
-    }
-    telemetry_raw = _apply_calibration(telemetry_raw, offsets)
+    cals = _telemetry_key_calibrations(
+        station_db.StationTelemetryKey.get_by_station(station.id)
+    )
+    telemetry_raw = _apply_calibration(telemetry_raw, cals)
 
     result = {
         "station_id": station.station_id,
@@ -823,11 +868,9 @@ def station_geojson(context, data_dict):
                         end_ts=end_ts if has_time_range else None,
                         limit=tel_limit,
                     )
-                    offsets = {
-                        k.telemetry_key: k.calibration_offset
-                        for k in keys_list if k.calibration_offset
-                    }
-                    tel = _apply_calibration(tel, offsets)
+                    tel = _apply_calibration(
+                        tel, _telemetry_key_calibrations(keys_list)
+                    )
                     latest_values = {}
                     for k, v in tel.items():
                         if v:
@@ -1127,12 +1170,9 @@ def _fetch_station_telemetry(tb_url, tb_api_key, station_dict, tel_keys, tr):
         log.debug("Dataset GeoJSON: skipping telemetry for %s: %s",
                   station_dict.get("name"), e)
         return {}
-    offsets = {
-        tk.get("telemetry_key"): tk.get("calibration_offset")
-        for tk in station_dict.get("telemetry_keys", [])
-        if tk.get("calibration_offset")
-    }
-    return _apply_calibration(tel, offsets)
+    return _apply_calibration(
+        tel, _telemetry_key_calibrations(station_dict.get("telemetry_keys", []))
+    )
 
 
 def _ts_to_iso(ts_ms):

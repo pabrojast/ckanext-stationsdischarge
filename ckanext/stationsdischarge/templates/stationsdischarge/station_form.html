@@ -258,7 +258,13 @@
                      value="{{ tk.unit or '' }}">
             </div>
             <div class="sf-tk-field sf-tk-field-narrow">
-              <label class="sf-tk-label" title="{{ _('Subtracted from raw values: displayed = raw − offset') }}">{{ _('Calibration offset') }}</label>
+              <label class="sf-tk-label" title="{{ _('Linear calibration: displayed = slope × raw + offset') }}">{{ _('Slope') }}</label>
+              <input type="number" step="any" name="tk_calibration_slope_{{ loop.index0 }}" class="form-control sf-input"
+                     placeholder="1"
+                     value="{{ tk.calibration_slope if tk.calibration_slope is not none else '' }}">
+            </div>
+            <div class="sf-tk-field sf-tk-field-narrow">
+              <label class="sf-tk-label" title="{{ _('Linear calibration: displayed = slope × raw + offset') }}">{{ _('Offset') }}</label>
               <input type="number" step="any" name="tk_calibration_offset_{{ loop.index0 }}" class="form-control sf-input"
                      placeholder="0"
                      value="{{ tk.calibration_offset if tk.calibration_offset is not none else '' }}">
@@ -352,6 +358,30 @@
   var defaultMode = savedMode || (isEdit ? 'advanced' : 'simple');
   setMode(defaultMode);
 
+  // ── Auto-slug: keep URL slug in sync with the title until the user
+  // edits the slug manually. Mirrors actions.py:_slugify so the preview the
+  // user sees matches what the server would produce on submit.
+  var titleEl = document.getElementById('field-title');
+  var slugEl = document.getElementById('field-name');
+  if (titleEl && slugEl) {
+    var slugTouched = (slugEl.value || '').trim().length > 0;
+    function slugify(s) {
+      return String(s == null ? '' : s)
+        .toLowerCase().trim()
+        .replace(/[^\w\s-]/g, '')
+        .replace(/[\s_]+/g, '-')
+        .replace(/-+/g, '-')
+        .slice(0, 100)
+        .replace(/^-+|-+$/g, '');
+    }
+    titleEl.addEventListener('input', function () {
+      if (!slugTouched) slugEl.value = slugify(this.value);
+    });
+    slugEl.addEventListener('input', function () {
+      slugTouched = this.value.trim().length > 0;
+    });
+  }
+
   // ── Telemetry Keys dynamic rows ──
   var container = document.getElementById('telemetry-keys-container');
   var addBtn = document.getElementById('btn-add-tk');
@@ -374,8 +404,9 @@
       .replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
-  function addKeyRow(key, label, unit, varType, calibrationOffset) {
+  function addKeyRow(key, label, unit, varType, calibrationSlope, calibrationOffset) {
     var idx = nextIndex++;
+    var calTitle = 'Linear calibration: displayed = slope × raw + offset';
     var html = '<div class="sf-tk-row" data-index="' + idx + '">' +
       '<div class="sf-tk-grid">' +
       '<div class="sf-tk-field"><label class="sf-tk-label">Key</label>' +
@@ -384,7 +415,9 @@
       '<input type="text" name="tk_label_' + idx + '" class="form-control sf-input" placeholder="Water Level" value="' + escAttr(label) + '"></div>' +
       '<div class="sf-tk-field sf-tk-field-narrow"><label class="sf-tk-label">Unit</label>' +
       '<input type="text" name="tk_unit_' + idx + '" class="form-control sf-input" placeholder="m" value="' + escAttr(unit) + '"></div>' +
-      '<div class="sf-tk-field sf-tk-field-narrow"><label class="sf-tk-label" title="Subtracted from raw values: displayed = raw − offset">Calibration offset</label>' +
+      '<div class="sf-tk-field sf-tk-field-narrow"><label class="sf-tk-label" title="' + calTitle + '">Slope</label>' +
+      '<input type="number" step="any" name="tk_calibration_slope_' + idx + '" class="form-control sf-input" placeholder="1" value="' + escAttr(calibrationSlope) + '"></div>' +
+      '<div class="sf-tk-field sf-tk-field-narrow"><label class="sf-tk-label" title="' + calTitle + '">Offset</label>' +
       '<input type="number" step="any" name="tk_calibration_offset_' + idx + '" class="form-control sf-input" placeholder="0" value="' + escAttr(calibrationOffset) + '"></div>' +
       '<div class="sf-tk-field"><label class="sf-tk-label">Variable type</label>' +
       '<select name="tk_variable_type_' + idx + '" class="form-control sf-input">' + varTypeOptions + '</select></div>' +
@@ -399,7 +432,7 @@
   }
 
   if (addBtn) {
-    addBtn.addEventListener('click', function() { addKeyRow('', '', '', '', ''); });
+    addBtn.addEventListener('click', function() { addKeyRow('', '', '', '', '', ''); });
   }
 
   if (container) {
@@ -469,6 +502,9 @@
         if (lonField && !lonField.value && attrs.longitude) lonField.value = attrs.longitude;
 
         var keys = data.telemetry_keys || [];
+        var cal = data.calibration || {};
+        var hasCal = (typeof cal.slope === 'number') || (typeof cal.offset === 'number');
+
         if (keys.length > 0) {
           var existingRows = container.querySelectorAll('.sf-tk-row');
           var hasData = false;
@@ -482,13 +518,44 @@
             nextIndex = 0;
           }
 
-          keys.forEach(function(k) { addKeyRow(k, k, '', '', ''); });
+          // Linear calibration in TB is stored at the device level (slope,
+          // intercept) but the device's rule chain typically emits the
+          // calibrated value under a derived key. Heuristic: when a key
+          // looks like the calibrated/derived stream (prefix "f" → fDistance,
+          // or contains "level"/"depth"), leave it pass-through. Apply the
+          // device-level transform to the first key that looks like the raw
+          // sensor stream ("distance"/"raw").
+          var calTargetIdx = -1;
+          if (hasCal) {
+            for (var i = 0; i < keys.length; i++) {
+              var lk = String(keys[i] || '').toLowerCase();
+              if (lk === 'distance' || lk === 'raw' || lk.indexOf('raw') === 0) {
+                calTargetIdx = i; break;
+              }
+            }
+          }
+
+          keys.forEach(function(k, idx) {
+            var slope = '', offset = '';
+            if (hasCal && idx === calTargetIdx) {
+              if (typeof cal.slope === 'number') slope = cal.slope;
+              if (typeof cal.offset === 'number') offset = cal.offset;
+            }
+            addKeyRow(k, k, '', '', slope, offset);
+          });
+        }
+
+        var calNote = '';
+        if (hasCal) {
+          calNote = ' Calibration found on device: <code>slope=' +
+            (typeof cal.slope === 'number' ? cal.slope : '—') +
+            ', offset=' + (typeof cal.offset === 'number' ? cal.offset : '—') + '</code>.';
         }
 
         statusDiv.className = 'alert alert-success sf-fetch-status';
         statusDiv.innerHTML = '<i class="fa fa-check-circle"></i> Metadata fetched successfully! ' +
           (dev.name ? 'Device: <strong>' + dev.name + '</strong>. ' : '') +
-          keys.length + ' telemetry key(s) found.';
+          keys.length + ' telemetry key(s) found.' + calNote;
       })
       .catch(function(err) {
         fetchBtn.disabled = false;
