@@ -121,6 +121,7 @@
           <th>{{ _('Label') }}</th>
           <th>{{ _('Unit') }}</th>
           <th>{{ _('Variable Type') }}</th>
+          <th title="{{ _('Subtracted from raw values before display') }}">{{ _('Calibration offset') }}</th>
         </tr>
       </thead>
       <tbody>
@@ -130,6 +131,7 @@
           <td>{{ tk.label or '—' }}</td>
           <td>{{ tk.unit or '—' }}</td>
           <td>{{ tk.variable_type or '—' }}</td>
+          <td>{{ tk.calibration_offset if tk.calibration_offset else '—' }}</td>
         </tr>
         {% endfor %}
       </tbody>

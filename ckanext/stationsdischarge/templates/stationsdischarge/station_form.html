@@ -257,6 +257,12 @@
                      placeholder="m"
                      value="{{ tk.unit or '' }}">
             </div>
+            <div class="sf-tk-field sf-tk-field-narrow">
+              <label class="sf-tk-label" title="{{ _('Subtracted from raw values: displayed = raw − offset') }}">{{ _('Calibration offset') }}</label>
+              <input type="number" step="any" name="tk_calibration_offset_{{ loop.index0 }}" class="form-control sf-input"
+                     placeholder="0"
+                     value="{{ tk.calibration_offset if tk.calibration_offset is not none else '' }}">
+            </div>
             <div class="sf-tk-field">
               <label class="sf-tk-label">{{ _('Variable type') }}</label>
               <select name="tk_variable_type_{{ loop.index0 }}" class="form-control sf-input">
@@ -368,7 +374,7 @@
       .replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
-  function addKeyRow(key, label, unit, varType) {
+  function addKeyRow(key, label, unit, varType, calibrationOffset) {
     var idx = nextIndex++;
     var html = '<div class="sf-tk-row" data-index="' + idx + '">' +
       '<div class="sf-tk-grid">' +
@@ -378,6 +384,8 @@
       '<input type="text" name="tk_label_' + idx + '" class="form-control sf-input" placeholder="Water Level" value="' + escAttr(label) + '"></div>' +
       '<div class="sf-tk-field sf-tk-field-narrow"><label class="sf-tk-label">Unit</label>' +
       '<input type="text" name="tk_unit_' + idx + '" class="form-control sf-input" placeholder="m" value="' + escAttr(unit) + '"></div>' +
+      '<div class="sf-tk-field sf-tk-field-narrow"><label class="sf-tk-label" title="Subtracted from raw values: displayed = raw − offset">Calibration offset</label>' +
+      '<input type="number" step="any" name="tk_calibration_offset_' + idx + '" class="form-control sf-input" placeholder="0" value="' + escAttr(calibrationOffset) + '"></div>' +
       '<div class="sf-tk-field"><label class="sf-tk-label">Variable type</label>' +
       '<select name="tk_variable_type_' + idx + '" class="form-control sf-input">' + varTypeOptions + '</select></div>' +
       '<div class="sf-tk-remove-wrap">' +
@@ -391,7 +399,7 @@
   }
 
   if (addBtn) {
-    addBtn.addEventListener('click', function() { addKeyRow('', '', '', ''); });
+    addBtn.addEventListener('click', function() { addKeyRow('', '', '', '', ''); });
   }
 
   if (container) {
@@ -474,7 +482,7 @@
             nextIndex = 0;
           }
 
-          keys.forEach(function(k) { addKeyRow(k, k, '', ''); });
+          keys.forEach(function(k) { addKeyRow(k, k, '', '', ''); });
         }
 
         statusDiv.className = 'alert alert-success sf-fetch-status';

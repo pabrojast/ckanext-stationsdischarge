@@ -52,7 +52,8 @@ def _validate_data(data_dict, schema, context):
 def _save_telemetry_keys(station_id, keys_list):
     """Replace telemetry keys for a station.
 
-    keys_list is a list of dicts with: telemetry_key, label, unit, variable_type, sort_order
+    keys_list is a list of dicts with: telemetry_key, label, unit, variable_type,
+    sort_order, calibration_offset.
     """
     station_db.StationTelemetryKey.delete_by_station(station_id)
     for i, key_data in enumerate(keys_list or []):
@@ -66,6 +67,11 @@ def _save_telemetry_keys(station_id, keys_list):
         tk.unit = key_data.get("unit", "")
         tk.variable_type = key_data.get("variable_type", "")
         tk.sort_order = key_data.get("sort_order", i)
+        raw_offset = key_data.get("calibration_offset")
+        try:
+            tk.calibration_offset = float(raw_offset) if raw_offset not in (None, "") else 0.0
+        except (TypeError, ValueError):
+            tk.calibration_offset = 0.0
         tk.save()
     model.Session.commit()
 
@@ -399,6 +405,29 @@ def _tb_request(tb_url, tb_api_key, api_path):
         )
 
 
+def _apply_calibration(telemetry, offsets):
+    """Subtract per-key calibration offsets from a TB telemetry response.
+
+    *telemetry* is the ``{key: [{ts, value}, ...]}`` shape returned by
+    ThingsBoard. *offsets* maps telemetry key → float offset. Non-numeric
+    values are left untouched so booleans/strings still pass through.
+    Keys with offset == 0 (or missing) are skipped to avoid float drift.
+    """
+    if not telemetry or not isinstance(telemetry, dict) or not offsets:
+        return telemetry
+    for key, points in telemetry.items():
+        offset = offsets.get(key)
+        if not offset or not points:
+            continue
+        for pt in points:
+            raw = pt.get("value")
+            try:
+                pt["value"] = float(raw) - float(offset)
+            except (TypeError, ValueError):
+                continue
+    return telemetry
+
+
 def _resolve_station(data_dict):
     """Resolve a station from id/name/station_id, or raise."""
     station_ref = data_dict.get("id") or data_dict.get("name")
@@ -516,15 +545,19 @@ def _fetch_telemetry(tb_url, tb_api_key, entity_id, keys, start_ts=None,
                        urllib.parse.quote(str(agg), safe=""), int(interval))
                 )
             else:
+                # orderBy=DESC ensures we get the most recent `limit` points
+                # within the range, not the oldest. Without it, some TB
+                # versions return data ascending from startTs and silently
+                # truncate the newest values.
                 return (
                     "/api/plugins/telemetry/DEVICE/%s/values/timeseries"
-                    "?keys=%s&startTs=%s&endTs=%s&limit=%s"
+                    "?keys=%s&startTs=%s&endTs=%s&limit=%s&orderBy=DESC"
                     % (safe_id, safe_keys, str(start_ts), str(end_ts), limit)
                 )
         else:
             return (
                 "/api/plugins/telemetry/DEVICE/%s/values/timeseries"
-                "?keys=%s" % (safe_id, safe_keys)
+                "?keys=%s&orderBy=DESC" % (safe_id, safe_keys)
             )
 
     # ── Attempt 1: with aggregation (if requested) ──
@@ -695,6 +728,13 @@ def station_telemetry(context, data_dict):
         interval=tr["interval"],
     )
 
+    offsets = {
+        tk.telemetry_key: tk.calibration_offset
+        for tk in station_db.StationTelemetryKey.get_by_station(station.id)
+        if tk.calibration_offset
+    }
+    telemetry_raw = _apply_calibration(telemetry_raw, offsets)
+
     result = {
         "station_id": station.station_id,
         "station_name": station.name,
@@ -783,6 +823,11 @@ def station_geojson(context, data_dict):
                         end_ts=end_ts if has_time_range else None,
                         limit=tel_limit,
                     )
+                    offsets = {
+                        k.telemetry_key: k.calibration_offset
+                        for k in keys_list if k.calibration_offset
+                    }
+                    tel = _apply_calibration(tel, offsets)
                     latest_values = {}
                     for k, v in tel.items():
                         if v:
@@ -1063,12 +1108,17 @@ def _station_base_props(station_dict):
 
 
 def _fetch_station_telemetry(tb_url, tb_api_key, station_dict, tel_keys, tr):
-    """Fetch telemetry from ThingsBoard for a single station, swallowing errors."""
+    """Fetch telemetry from ThingsBoard for a single station, swallowing errors.
+
+    Applies per-key ``calibration_offset`` from the station's telemetry keys
+    so dataset GeoJSON consumers (Terria, etc.) see the same calibrated
+    values the dashboard does.
+    """
     entity_id = station_dict.get("thingsboard_entity_id")
     if not entity_id or not tel_keys:
         return {}
     try:
-        return _fetch_telemetry(
+        tel = _fetch_telemetry(
             tb_url, tb_api_key, entity_id, ",".join(tel_keys),
             start_ts=tr["start_ts"], end_ts=tr["end_ts"], limit=tr["limit"],
             agg=tr["agg"], interval=tr["interval"],
@@ -1077,6 +1127,12 @@ def _fetch_station_telemetry(tb_url, tb_api_key, station_dict, tel_keys, tr):
         log.debug("Dataset GeoJSON: skipping telemetry for %s: %s",
                   station_dict.get("name"), e)
         return {}
+    offsets = {
+        tk.get("telemetry_key"): tk.get("calibration_offset")
+        for tk in station_dict.get("telemetry_keys", [])
+        if tk.get("calibration_offset")
+    }
+    return _apply_calibration(tel, offsets)
 
 
 def _ts_to_iso(ts_ms):

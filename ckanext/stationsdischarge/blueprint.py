@@ -391,7 +391,8 @@ def _format_error_summary(errors):
 def _parse_telemetry_keys_from_form(form):
     """Parse telemetry keys from form data.
 
-    Form fields are indexed: tk_key_0, tk_label_0, tk_unit_0, tk_variable_type_0, ...
+    Form fields are indexed: tk_key_0, tk_label_0, tk_unit_0,
+    tk_variable_type_0, tk_calibration_offset_0, ...
     """
     keys = []
     i = 0
@@ -405,6 +406,9 @@ def _parse_telemetry_keys_from_form(form):
                 "label": form.get(f"tk_label_{i}", "").strip(),
                 "unit": form.get(f"tk_unit_{i}", "").strip(),
                 "variable_type": form.get(f"tk_variable_type_{i}", "").strip(),
+                "calibration_offset": form.get(
+                    f"tk_calibration_offset_{i}", ""
+                ).strip(),
                 "sort_order": i,
             })
         i += 1

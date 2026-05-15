@@ -38,6 +38,16 @@
     8760: { limit: 366,  agg: 'AVG', interval: 86400000 },
   };
 
+  // Ordered thresholds for picking the right preset for an arbitrary span.
+  var PRESET_HOURS = [1, 6, 24, 168, 720, 2160, 4380, 8760];
+
+  function pickPresetForSpan(hoursSpan) {
+    for (var i = 0; i < PRESET_HOURS.length; i++) {
+      if (hoursSpan <= PRESET_HOURS[i]) return PRESET_HOURS[i];
+    }
+    return PRESET_HOURS[PRESET_HOURS.length - 1];
+  }
+
   var AGG_LABELS = {
     3600000:  t('hourly_avg', 'hourly avg'),
     10800000: t('3h_avg', '3-hour avg'),
@@ -126,7 +136,17 @@
 
     $('dashApply').addEventListener('click', function () {
       document.querySelectorAll('.dash-presets .btn').forEach(function (b) { b.classList.remove('active'); });
-      activeHours = 0;
+      // Without auto-picking a preset, a multi-day custom range would fall
+      // back to raw fetches with limit=2000 and silently truncate at the
+      // ThingsBoard cap. Map the span to the matching preset so long ranges
+      // get aggregation and short ones get raw points.
+      var startTs = new Date($('dashStart').value).getTime();
+      var endTs = new Date($('dashEnd').value).getTime();
+      if (!isNaN(startTs) && !isNaN(endTs) && endTs > startTs) {
+        activeHours = pickPresetForSpan((endTs - startTs) / 3600000);
+      } else {
+        activeHours = 0;
+      }
       fetchData();
     });
   }

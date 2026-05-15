@@ -141,6 +141,11 @@ class StationTelemetryKey(DomainObject, BaseModel):
     unit = Column(types.UnicodeText)
     variable_type = Column(types.UnicodeText)
     sort_order = Column(types.Integer, default=0)
+    # Constant subtracted from raw values before they reach the dashboard /
+    # GeoJSON output: displayed_value = raw_value - calibration_offset.
+    # Set to e.g. the sensor's mounting height to turn distance-to-surface
+    # readings into water depth without re-flashing the device.
+    calibration_offset = Column(types.Float, default=0.0)
     created = Column(types.DateTime, default=datetime.datetime.utcnow)
 
     @classmethod
