@@ -796,6 +796,128 @@ def station_telemetry(context, data_dict):
     return result
 
 
+def station_csv(context, data_dict):
+    """Return a single station's telemetry as Terria-compatible CSV.
+
+    One row per timestamp, with ``lat,lon,time`` first (Terria auto-detects
+    these), then station metadata, then one column per telemetry key.
+    Timestamps are unioned across keys so missing samples don't drop rows.
+    Calibration is applied — values match the dashboard chart and GeoJSON.
+
+    Same params as ``station_telemetry`` (``keys``, ``time_range``,
+    ``start_ts``, ``end_ts``, ``agg``, ``interval``, ``limit``).
+
+    :param id: Station UUID or name/slug (required)
+    :returns: Dict with ``csv_content`` string
+    """
+    station = _resolve_station(data_dict)
+    _check_station_access(context, station)
+
+    keys_list = station_db.StationTelemetryKey.get_by_station(station.id)
+    keys_param = data_dict.get("keys") or ""
+    if keys_param:
+        wanted = {s.strip() for s in str(keys_param).split(",") if s.strip()}
+        allowed_keys = [k.telemetry_key for k in keys_list
+                        if k.telemetry_key in wanted]
+    else:
+        allowed_keys = [k.telemetry_key for k in keys_list]
+
+    import csv
+    import io
+
+    base_cols = [
+        "lat", "lon", "time",
+        "id", "station_id", "title", "name",
+        "station_status", "river_name", "basin_name", "country",
+        "elevation_masl",
+    ]
+
+    lat = station.latitude
+    lon = station.longitude
+    base_row = {
+        "lat": lat if lat is not None else "",
+        "lon": lon if lon is not None else "",
+        "id": station.id or "",
+        "station_id": station.station_id or "",
+        "title": station.title or "",
+        "name": station.name or "",
+        "station_status": station.station_status or "",
+        "river_name": station.river_name or "",
+        "basin_name": station.basin_name or "",
+        "country": station.country or "",
+        "elevation_masl": station.elevation_masl
+            if station.elevation_masl is not None else "",
+    }
+
+    rows = []
+    seen_keys = set()
+
+    tb_url, tb_api_key = _get_tb_config()
+    if tb_api_key and station.thingsboard_entity_id and allowed_keys:
+        tr = _resolve_time_range(data_dict)
+        try:
+            tel = _fetch_telemetry(
+                tb_url, tb_api_key, station.thingsboard_entity_id,
+                ",".join(allowed_keys),
+                start_ts=tr["start_ts"], end_ts=tr["end_ts"],
+                limit=tr["limit"], agg=tr["agg"], interval=tr["interval"],
+            )
+            tel = _apply_calibration(
+                tel, _telemetry_key_calibrations(keys_list)
+            )
+        except Exception as e:
+            log.debug("Station CSV: telemetry fetch failed for %s: %s",
+                      station.name, e)
+            tel = {}
+
+        by_ts = {}
+        for k, points in tel.items():
+            if not points:
+                continue
+            for pt in points:
+                try:
+                    ts_int = int(pt.get("ts"))
+                except (ValueError, TypeError):
+                    continue
+                by_ts.setdefault(ts_int, {})[k] = _coerce_number(pt.get("value"))
+                seen_keys.add(k)
+
+        for ts_int in sorted(by_ts.keys()):
+            iso = _ts_to_iso(ts_int)
+            if not iso:
+                continue
+            row = dict(base_row)
+            row["time"] = iso
+            for k, v in by_ts[ts_int].items():
+                row[k] = v
+            rows.append(row)
+
+    # If we got nothing back, still emit one metadata-only row so the file
+    # isn't just a header — useful for static map use.
+    if not rows:
+        row = dict(base_row)
+        row["time"] = ""
+        rows.append(row)
+
+    headers = base_cols + sorted(seen_keys)
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(headers)
+    for r in rows:
+        writer.writerow(["" if r.get(h) is None else r.get(h) for h in headers])
+
+    return {
+        "csv_content": output.getvalue(),
+        "row_count": len(rows),
+        "station": {
+            "id": station.id,
+            "station_id": station.station_id,
+            "name": station.name,
+            "title": station.title,
+        },
+    }
+
 
 def station_geojson(context, data_dict):
     """Return all approved stations as a GeoJSON FeatureCollection.
@@ -1473,7 +1595,7 @@ def dataset_csv(context, data_dict):
     # Terria auto-detects lat/lon/time; keep these three first for clarity.
     base_headers = [
         "lat", "lon", "time",
-        "station_id", "title", "name",
+        "id", "station_id", "title", "name",
         "station_status", "river_name", "basin_name", "country",
         "elevation_masl",
     ]
@@ -1495,6 +1617,7 @@ def dataset_csv(context, data_dict):
         base = {
             "lat": lat,
             "lon": lon,
+            "id": station_dict.get("id", ""),
             "station_id": station_dict.get("station_id", ""),
             "title": station_dict.get("title", ""),
             "name": station_dict.get("name", ""),

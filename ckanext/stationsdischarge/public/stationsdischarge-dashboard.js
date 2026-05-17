@@ -10,6 +10,7 @@
 
   var CFG = window.DASH_CONFIG || {};
   var TELEMETRY_URL = CFG.telemetryUrl || '';
+  var CSV_URL = CFG.csvUrl || '';
   var CONFIGURED_KEYS = CFG.telemetryKeys || [];
   var I18N = CFG.i18n || {};
 
@@ -206,8 +207,34 @@
           renderTable();
           buildTableHeader();
         }
+        updateCsvLink();
       });
     });
+  }
+
+  /* Recompute the CSV download URL from the current chart filters. */
+  function updateCsvLink() {
+    var csvLink = $('dashCsvLink');
+    if (!csvLink || !CSV_URL) return;
+    var startVal = $('dashStart').value;
+    var endVal = $('dashEnd').value;
+    if (!startVal || !endVal) { csvLink.href = CSV_URL; return; }
+    var startTs = new Date(startVal).getTime();
+    var endTs = new Date(endVal).getTime();
+    var preset = PRESETS[activeHours];
+    var limit = (preset && preset.limit) || 2000;
+    var qs = '?start_ts=' + startTs + '&end_ts=' + endTs + '&limit=' + limit;
+    if (preset && preset.agg) {
+      qs += '&agg=' + preset.agg + '&interval=' + preset.interval;
+    }
+    var selectedKeys = [];
+    document.querySelectorAll('.dash-key-check').forEach(function (cb) {
+      if (cb.checked) selectedKeys.push(cb.value);
+    });
+    if (selectedKeys.length && selectedKeys.length !== CONFIGURED_KEYS.length) {
+      qs += '&keys=' + encodeURIComponent(selectedKeys.join(','));
+    }
+    csvLink.href = CSV_URL + qs;
   }
 
   /* ── Data fetching ───────────────────────────────── */
@@ -226,6 +253,8 @@
     if (preset && preset.agg) {
       url += '&agg=' + preset.agg + '&interval=' + preset.interval;
     }
+
+    updateCsvLink();
 
     var aggBadge = $('dashAggBadge');
     if (preset && preset.agg && AGG_LABELS[preset.interval]) {

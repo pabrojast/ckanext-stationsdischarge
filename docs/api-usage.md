@@ -192,6 +192,29 @@ Content-Type: application/json
 
 Returns telemetry data grouped by key.
 
+### Station telemetry as Terria-compatible CSV
+
+```http
+POST /api/3/action/station_csv
+Content-Type: application/json
+
+{
+  "id": "EST-MAIPO-001",
+  "time_range": "7d"
+}
+```
+
+Or, more usefully, paste this URL into a TerriaJS CSV catalog item:
+
+```
+GET /hydro-station/<name>/csv?time_range=30d
+```
+
+Same query params as `/telemetry` (`keys`, `start_ts`, `end_ts`, `time_range`,
+`agg`, `interval`, `limit`). Output has `lat,lon,time` first (Terria auto-
+detects these), then station metadata, then one column per telemetry key.
+Calibration is applied so the values match the dashboard chart.
+
 ---
 
 ## 8. Station GeoJSON
@@ -373,6 +396,7 @@ extra config. Telemetry-key columns appear in the style picker.
 | `/hydro-station/<name>/delete`           | Delete confirmation        |
 | `/hydro-station/<name>/dashboard`        | Telemetry dashboard        |
 | `/hydro-station/<name>/geojson`          | Station GeoJSON            |
+| `/hydro-station/<name>/csv`              | Station telemetry CSV (Terria) |
 | `/hydro-station/fetch-tb-metadata`       | Fetch ThingsBoard metadata |
 
 ### Datasets

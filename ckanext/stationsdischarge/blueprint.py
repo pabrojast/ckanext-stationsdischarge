@@ -341,6 +341,50 @@ def telemetry(name):
     )
 
 
+@hydro_stations.route("/<name>/csv", methods=["GET"])
+def station_csv_route(name):
+    """Terria-compatible CSV of a single station's telemetry.
+
+    Same query params as ``/telemetry``: keys, start_ts, end_ts, time_range,
+    agg, interval, limit.
+    """
+    context = _get_context()
+    data_dict = {
+        "id": name,
+        "keys": toolkit.request.args.get("keys", ""),
+        "start_ts": toolkit.request.args.get("start_ts", ""),
+        "end_ts": toolkit.request.args.get("end_ts", ""),
+        "time_range": toolkit.request.args.get("time_range", ""),
+        "agg": toolkit.request.args.get("agg", ""),
+        "interval": toolkit.request.args.get("interval", ""),
+        "limit": toolkit.request.args.get("limit", ""),
+    }
+
+    try:
+        result = toolkit.get_action("station_csv")(context, data_dict)
+    except toolkit.ObjectNotFound:
+        return Response(json.dumps({"error": "Station not found"}),
+                        status=404, mimetype="application/json")
+    except toolkit.NotAuthorized:
+        return Response(json.dumps({"error": "Not authorized"}),
+                        status=403, mimetype="application/json")
+    except toolkit.ValidationError as e:
+        return Response(json.dumps({"error": e.error_dict}),
+                        status=400, mimetype="application/json")
+    except Exception as e:
+        log.error("Error generating station CSV for %s: %s", name, e)
+        return Response(json.dumps({"error": str(e)}),
+                        status=500, mimetype="application/json")
+
+    return Response(
+        result["csv_content"],
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename=station_{name}.csv",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
 
 # ── DASHBOARD ────────────────────────────────────────
 
@@ -370,6 +414,8 @@ def dashboard(name):
         "org": org,
         "telemetry_url": toolkit.url_for(
             "hydro_stations.telemetry", name=station["name"]),
+        "csv_url": toolkit.url_for(
+            "hydro_stations.station_csv_route", name=station["name"]),
         "geojson_url": toolkit.url_for("hydro_stations.geojson"),
     }
     return toolkit.render("stationsdischarge/dashboard.html", extra_vars=extra_vars)

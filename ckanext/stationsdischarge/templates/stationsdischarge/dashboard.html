@@ -59,6 +59,10 @@
       <a href="{{ geojson_url }}?include_telemetry=true" class="btn" target="_blank" title="{{ _('GeoJSON') }}">
         <i class="fa fa-globe"></i> GeoJSON
       </a>
+      <a id="dashCsvLink" href="{{ csv_url }}" class="btn"
+         title="{{ _('CSV (Terria-ready: lat,lon,time columns). Reflects the current time range and selected keys.') }}">
+        <i class="fa fa-download"></i> CSV
+      </a>
     </div>
   </div>
 
@@ -191,6 +195,8 @@
     <h2 class="module-heading"><i class="fa fa-link"></i> {{ _('API Endpoints') }}</h2>
     <div class="module-content" style="font-size:12px;">
       <p><a href="{{ telemetry_url }}" target="_blank">JSON (telemetry)</a></p>
+      <p><a href="{{ csv_url }}" target="_blank"
+            title="{{ _('Terria-compatible: lat,lon,time + telemetry columns') }}">CSV (telemetry)</a></p>
       <p><a href="{{ geojson_url }}" target="_blank">GeoJSON (all stations)</a></p>
     </div>
   </div>
@@ -205,6 +211,7 @@
   <script>
     window.DASH_CONFIG = {
       telemetryUrl: {{ telemetry_url | tojson }},
+      csvUrl: {{ csv_url | tojson }},
       telemetryKeys: {{ (station.telemetry_keys or []) | tojson }},
       i18n: {
         time_utc: {{ _('Time (UTC)') | tojson }},

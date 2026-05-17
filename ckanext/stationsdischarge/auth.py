@@ -143,6 +143,12 @@ def station_telemetry(context, data_dict):
 
 
 @toolkit.auth_allow_anonymous_access
+def station_csv(context, data_dict):
+    """Same access rules as station_telemetry."""
+    return station_show(context, data_dict)
+
+
+@toolkit.auth_allow_anonymous_access
 def station_geojson(context, data_dict):
     """Anyone can access the GeoJSON endpoint (only approved stations returned)."""
     return {"success": True}
