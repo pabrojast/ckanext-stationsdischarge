@@ -38,12 +38,17 @@
          title="{{ _('GeoJSON with telemetry (uses dataset default time range)') }}">
         <i class="fa fa-globe"></i> GeoJSON + {{ _('Telemetry') }}
       </a>
-      <a href="{{ csv_url }}" class="btn btn-default btn-sm" title="{{ _('CSV') }}">
+      <a href="{{ csv_url }}" class="btn btn-default btn-sm"
+         title="{{ _('CSV (stations only — lat,lon,time columns for Terria)') }}">
         <i class="fa fa-download"></i> CSV
       </a>
       <a href="{{ csv_url }}?include_telemetry=true" class="btn btn-default btn-sm"
-         title="{{ _('CSV with telemetry') }}">
-        <i class="fa fa-download"></i> CSV + {{ _('Telemetry') }}
+         title="{{ _('CSV with latest telemetry snapshot per station') }}">
+        <i class="fa fa-download"></i> CSV + {{ _('Latest') }}
+      </a>
+      <a href="{{ csv_url }}?mode=timeseries" class="btn btn-default btn-sm"
+         title="{{ _('CSV time series — one row per (station, timestamp). Drop into a Terria CSV catalog item; the time slider works out of the box.') }}">
+        <i class="fa fa-clock-o"></i> CSV {{ _('Time series') }}
       </a>
     </div>
   </div>

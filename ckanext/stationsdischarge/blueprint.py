@@ -720,6 +720,14 @@ def ds_csv(name):
     data_dict = {
         "id": name,
         "include_telemetry": toolkit.request.args.get("include_telemetry", ""),
+        "mode": toolkit.request.args.get("mode", ""),
+        "keys": toolkit.request.args.get("keys", ""),
+        "time_range": toolkit.request.args.get("time_range", ""),
+        "start_ts": toolkit.request.args.get("start_ts", ""),
+        "end_ts": toolkit.request.args.get("end_ts", ""),
+        "agg": toolkit.request.args.get("agg", ""),
+        "interval": toolkit.request.args.get("interval", ""),
+        "limit": toolkit.request.args.get("limit", ""),
     }
 
     try:

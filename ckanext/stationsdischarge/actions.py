@@ -1407,66 +1407,184 @@ def dataset_geojson(context, data_dict):
 
 
 def dataset_csv(context, data_dict):
-    """Return a dataset's stations as CSV data.
+    """Return a dataset's stations as Terria-compatible CSV.
+
+    Two shapes via ``mode`` (mirrors the GeoJSON modes):
+
+    - ``snapshot`` (default): one row per station. ``time`` is the timestamp
+      of the latest telemetry reading (empty if no telemetry was fetched).
+      Each telemetry key becomes its own column with the latest value.
+    - ``timeseries``: one row per (station × timestamp). Drop the URL into
+      a TerriaJS CSV catalog item and the time slider works out of the box.
+
+    Columns always start with ``lat,lon,time`` (Terria auto-detects these
+    names), followed by station metadata and then telemetry key columns.
+    Rows missing lat/lon are dropped — Terria cannot render them.
+
+    Time window comes from the dataset's stored ``time_range``/``agg``/
+    ``interval_ms``, with the same per-request overrides supported by
+    ``dataset_geojson``.
 
     :param id: Dataset UUID or name (required)
-    :param include_telemetry: Include latest telemetry (optional)
-    :returns: Dict with csv_content string
+    :param include_telemetry: Include telemetry ("true"/"false").
+        Forced on for ``mode=timeseries``.
+    :param mode: ``snapshot`` (default) or ``timeseries``
+    :param keys: Comma-separated whitelist of telemetry keys
+    :param time_range: Override stored preset (1h/24h/7d/30d/...)
+    :param start_ts: Override start timestamp (ms)
+    :param end_ts: Override end timestamp (ms)
+    :param agg: Override aggregation (AVG/MIN/MAX/SUM/COUNT)
+    :param interval: Override aggregation interval (ms)
+    :param limit: Max points per key
+    :returns: Dict with ``csv_content`` string
     """
     ds_data = dataset_show(context, data_dict)
     toolkit.check_access("dataset_csv", context, data_dict)
 
-    include_telemetry = str(data_dict.get("include_telemetry", "")).lower() == "true"
+    mode = (data_dict.get("mode") or "snapshot").lower()
+    if mode not in ("snapshot", "timeseries"):
+        mode = "snapshot"
+
+    keys_override = data_dict.get("keys") or ""
+    stored_keys = ds_data.get("display_keys") or ""
+
+    # timeseries is meaningless without telemetry — force it on.
+    include_telemetry = (
+        mode == "timeseries"
+        or str(data_dict.get("include_telemetry", "")).lower() == "true"
+    )
+
+    tr = None
     tb_url, tb_api_key = None, None
     if include_telemetry:
+        tr = _resolve_time_range({
+            "time_range": data_dict.get("time_range") or ds_data.get("time_range"),
+            "agg": data_dict.get("agg") or ds_data.get("agg"),
+            "interval": data_dict.get("interval") or ds_data.get("interval_ms"),
+            "start_ts": data_dict.get("start_ts"),
+            "end_ts": data_dict.get("end_ts"),
+            "limit": data_dict.get("limit"),
+        })
         tb_url, tb_api_key = _get_tb_config()
 
     import csv
     import io
-    output = io.StringIO()
 
+    # Terria auto-detects lat/lon/time; keep these three first for clarity.
     base_headers = [
-        "station_id", "title", "name", "latitude", "longitude",
+        "lat", "lon", "time",
+        "station_id", "title", "name",
         "station_status", "river_name", "basin_name", "country",
         "elevation_masl",
     ]
 
-    all_tel_keys = set()
-    stations_with_tel = []
-    for station_dict in ds_data.get("stations_detail", []):
-        tel_data = {}
-        if include_telemetry and tb_api_key:
-            entity_id = station_dict.get("thingsboard_entity_id")
-            keys_list = station_dict.get("telemetry_keys", [])
-            tel_keys = ",".join(k["telemetry_key"] for k in keys_list)
-            if entity_id and tel_keys:
-                try:
-                    tel = _fetch_telemetry(tb_url, tb_api_key, entity_id, tel_keys, limit=1)
-                    for k, v in tel.items():
-                        if v:
-                            tel_data[k] = v[0].get("value", "")
-                            all_tel_keys.add(k)
-                except Exception:
-                    pass
-        stations_with_tel.append((station_dict, tel_data))
+    # Two passes: first collect rows + the union of telemetry keys actually
+    # present, then emit one stable header order.
+    rows = []  # list of dicts keyed by header name
+    seen_tel_keys = set()
 
-    tel_headers = sorted(all_tel_keys)
+    for station_dict in ds_data.get("stations_detail", []):
+        lat = station_dict.get("latitude")
+        lon = station_dict.get("longitude")
+        if lat is None or lon is None:
+            continue  # Terria can't plot without coordinates
+
+        keys_list = station_dict.get("telemetry_keys", [])
+        allowed_keys = _filter_keys(keys_list, stored_keys, keys_override)
+
+        base = {
+            "lat": lat,
+            "lon": lon,
+            "station_id": station_dict.get("station_id", ""),
+            "title": station_dict.get("title", ""),
+            "name": station_dict.get("name", ""),
+            "station_status": station_dict.get("station_status", ""),
+            "river_name": station_dict.get("river_name", ""),
+            "basin_name": station_dict.get("basin_name", ""),
+            "country": station_dict.get("country", ""),
+            "elevation_masl": station_dict.get("elevation_masl", ""),
+        }
+
+        if not include_telemetry or not tb_api_key:
+            row = dict(base)
+            row["time"] = ""
+            rows.append(row)
+            continue
+
+        tel = _fetch_station_telemetry(
+            tb_url, tb_api_key, station_dict, allowed_keys, tr,
+        )
+
+        if mode == "timeseries":
+            # One row per (station, ts), unioned across keys so missing samples
+            # don't drop the row.
+            by_ts = {}
+            for k, points in tel.items():
+                if not points or k not in allowed_keys:
+                    continue
+                for pt in points:
+                    try:
+                        ts_int = int(pt.get("ts"))
+                    except (ValueError, TypeError):
+                        continue
+                    by_ts.setdefault(ts_int, {})[k] = _coerce_number(pt.get("value"))
+                    seen_tel_keys.add(k)
+
+            for ts_int in sorted(by_ts.keys()):
+                iso = _ts_to_iso(ts_int)
+                if not iso:
+                    continue
+                row = dict(base)
+                row["time"] = iso
+                for k, v in by_ts[ts_int].items():
+                    row[k] = v
+                rows.append(row)
+        else:
+            # snapshot: latest value per key, station time = newest ts seen.
+            row = dict(base)
+            newest_ts = None
+            for k, points in tel.items():
+                if not points or k not in allowed_keys:
+                    continue
+                ordered = sorted(points, key=lambda p: int(p.get("ts", 0)))
+                last = ordered[-1]
+                row[k] = _coerce_number(last.get("value", ""))
+                seen_tel_keys.add(k)
+                try:
+                    ts_int = int(last.get("ts"))
+                except (ValueError, TypeError):
+                    ts_int = None
+                if ts_int is not None and (newest_ts is None or ts_int > newest_ts):
+                    newest_ts = ts_int
+            row["time"] = _ts_to_iso(newest_ts) if newest_ts else ""
+            rows.append(row)
+
+    tel_headers = sorted(seen_tel_keys)
     headers = base_headers + tel_headers
 
+    output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(headers)
+    for row in rows:
+        writer.writerow(["" if row.get(h) is None else row.get(h) for h in headers])
 
-    for station_dict, tel_data in stations_with_tel:
-        row = [station_dict.get(h, "") for h in base_headers]
-        for tk in tel_headers:
-            row.append(tel_data.get(tk, ""))
-        writer.writerow(row)
-
-    return {
+    result = {
         "csv_content": output.getvalue(),
+        "row_count": len(rows),
         "dataset": {
             "id": ds_data["id"],
             "title": ds_data["title"],
             "name": ds_data["name"],
+            "mode": mode,
         },
     }
+    if include_telemetry and tr:
+        result["telemetry_window"] = {
+            "time_range": tr["time_range"],
+            "start_ts": tr["start_ts"],
+            "end_ts": tr["end_ts"],
+            "agg": tr["agg"],
+            "interval_ms": tr["interval"],
+            "limit": tr["limit"],
+        }
+    return result

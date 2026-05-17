@@ -319,14 +319,44 @@ which is the URL you paste into TerriaJS.
 The dataset detail page (`/hydro-dataset/<name>`) has an interactive builder
 that emits this snippet for you with the right URL and timestamp property.
 
-### Export dataset CSV
+### Export dataset CSV (Terria-compatible)
 
 ```http
 POST /api/3/action/dataset_csv
 Content-Type: application/json
 
-{"id": "cuenca-del-maipo", "include_telemetry": true}
+{"id": "cuenca-del-maipo", "mode": "timeseries", "time_range": "30d"}
 ```
+
+Two output shapes via `mode`:
+
+- `snapshot` (default) — one row per station; `time` is the timestamp of the
+  station's latest reading. Useful for a static dot map.
+- `timeseries` — one row per `(station, timestamp)`. Forces
+  `include_telemetry=true` and pulls the dataset's stored time window
+  (overridable via `time_range`/`start_ts`/`end_ts`/`agg`/`interval`/`limit`).
+
+Every row leads with `lat,lon,time` so TerriaJS auto-detects the geometry and
+time columns. The remaining columns are station metadata followed by one
+column per telemetry key (the union of keys that returned data, alphabetical).
+Rows missing lat/lon are dropped — Terria can't render them.
+
+The same endpoint is exposed as
+`GET /hydro-dataset/<name>/csv?mode=timeseries&time_range=30d` — the URL you
+paste into a Terria CSV catalog item.
+
+#### TerriaJS catalog item
+
+```json
+{
+  "type": "csv",
+  "name": "Cuenca del Maipo (series)",
+  "url": "https://your-ckan/hydro-dataset/cuenca-del-maipo/csv?mode=timeseries&time_range=30d"
+}
+```
+
+Terria reads `lat`/`lon` for geometry and `time` for the time slider with no
+extra config. Telemetry-key columns appear in the style picker.
 
 ---
 
